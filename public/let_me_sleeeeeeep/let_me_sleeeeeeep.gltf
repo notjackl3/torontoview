@@ -1,0 +1,162 @@
+{
+    "asset": {
+        "generator": "SOLIDWORKSGLTF",
+        "version": "2.0"
+    },
+    "scene": 0,
+    "scenes": [
+        {
+            "name": "Default",
+            "nodes": [
+                0,
+                1
+            ]
+        }
+    ],
+    "nodes": [
+        {
+            "matrix": [
+                0.7509900181562523,
+                0.0,
+                -0.6603135562970609,
+                0.0,
+                -0.38066739672913674,
+                0.8171007476470141,
+                -0.43294191442057506,
+                0.0,
+                0.5395427005317872,
+                0.5764948986718708,
+                0.6136345053109185,
+                0.0,
+                275.14234807630106,
+                346.14385604277277,
+                313.7391971236804,
+                1.0
+            ],
+            "camera": 0,
+            "name": "current camera"
+        },
+        {
+            "mesh": 0,
+            "name": "let me sleeeeeeep"
+        }
+    ],
+    "cameras": [
+        {
+            "type": "orthographic",
+            "orthographic": {
+                "xmag": 135.03521400292303,
+                "ymag": 104.34539263862234,
+                "zfar": 685.3332217905046,
+                "znear": 408.36481203950063
+            }
+        }
+    ],
+    "meshes": [
+        {
+            "primitives": [
+                {
+                    "attributes": {
+                        "POSITION": 1,
+                        "NORMAL": 2
+                    },
+                    "indices": 0,
+                    "material": 0,
+                    "mode": 4
+                }
+            ]
+        }
+    ],
+    "accessors": [
+        {
+            "bufferView": 0,
+            "byteOffset": 0,
+            "componentType": 5125,
+            "count": 894,
+            "type": "SCALAR",
+            "min": [
+                0
+            ],
+            "max": [
+                511
+            ]
+        },
+        {
+            "bufferView": 1,
+            "byteOffset": 0,
+            "componentType": 5126,
+            "count": 512,
+            "type": "VEC3",
+            "min": [
+                -40.0,
+                0.0,
+                -50.0
+            ],
+            "max": [
+                50.0,
+                115.0,
+                63.0
+            ]
+        },
+        {
+            "bufferView": 2,
+            "byteOffset": 0,
+            "componentType": 5126,
+            "count": 512,
+            "type": "VEC3",
+            "min": [
+                -1.0,
+                -1.0,
+                -1.0
+            ],
+            "max": [
+                1.0,
+                1.0,
+                1.0
+            ]
+        }
+    ],
+    "materials": [
+        {
+            "name": "defaultplastic",
+            "pbrMetallicRoughness": {
+                "baseColorFactor": [
+                    0.5989418101001601,
+                    0.6455552910764322,
+                    0.8591735777059335,
+                    1.0
+                ],
+                "metallicFactor": 0.0,
+                "roughnessFactor": 0.16999999880790712
+            }
+        }
+    ],
+    "bufferViews": [
+        {
+            "buffer": 0,
+            "byteOffset": 0,
+            "byteLength": 3576,
+            "target": 34963
+        },
+        {
+            "buffer": 0,
+            "byteOffset": 3576,
+            "byteLength": 6144,
+            "byteStride": 12,
+            "target": 34962
+        },
+        {
+            "buffer": 0,
+            "byteOffset": 9720,
+            "byteLength": 6144,
+            "byteStride": 12,
+            "target": 34962
+        }
+    ],
+    "buffers": [
+        {
+            "uri": "let me sleeeeeeep.bin",
+            "byteLength": 15864
+        }
+    ]
+}

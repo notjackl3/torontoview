@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Toronto Municipal Planning Authority</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://code.iconify.design/iconify-icon/1.0.7/iconify-icon.min.js"></script>
+    <link href="https://api.fontshare.com/v2/css?f[]=archivo@800,700,500,400&f[]=lora@700,400&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Archivo', sans-serif; }
+        h1, h2, h3, .serif-font { font-family: 'Lora', serif; }
+        .map-gradient {
+            background: radial-gradient(circle at center, transparent 0%, rgba(241, 245, 249, 0.6) 100%);
+        }
+        .glass {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(8px);
+            border: 1px solid #e2e8f0;
+        }
+        .sidebar-transition {
+            transition: all 0.2s ease-in-out;
+        }
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 4px;
+        }
+        .accent-blue { color: #003F7C; }
+        .bg-accent-blue { background-color: #003F7C; }
+        .border-accent-blue { border-color: #003F7C; }
+        .ui-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #64748b; }
+    </style>
+</head>
+<body>
+    <!-- Full design HTML from Superdesign -->
+    <div class="relative min-h-screen w-full bg-slate-100 text-slate-800 overflow-hidden">
+        <!-- MAP BACKGROUND (Simulation) -->
+        <div class="absolute inset-0 z-0 bg-slate-200">
+            <div class="absolute inset-0 opacity-15" style="background-image: url('https://images.unsplash.com/photo-1526778548025-fa2f459cd5c1?auto=format&fit=crop&q=80&w=2000'); background-size: cover; filter: grayscale(100%) brightness(1.2) contrast(0.8);"></div>
+            <div class="absolute inset-0 map-gradient"></div>
+            <!-- SVG Map Overlay (Grid/Districts) -->
+            <svg class="absolute inset-0 w-full h-full opacity-10" xmlns="http://www.w3.org/2000/svg">
+                <defs>
+                    <pattern id="grid" width="80" height="80" patternUnits="userSpaceOnUse">
+                        <path d="M 80 0 L 0 0 0 80" fill="none" stroke="#64748b" stroke-width="0.5"/>
+                    </pattern>
+                </defs>
+                <rect width="100%" height="100%" fill="url(#grid)" />
+            </svg>
+            <!-- Simulated Building Markers -->
+            <div class="absolute top-1/2 left-1/3 -translate-x-12 -translate-y-24 group cursor-pointer">
+                <div class="relative w-6 h-6 bg-white border-2 border-[#003F7C] flex items-center justify-center">
+                    <div class="w-1.5 h-1.5 bg-[#003F7C]"></div>
+                </div>
+                <div class="absolute top-full left-0 mt-1 px-2 py-1 bg-white border border-slate-300 text-[9px] uppercase tracking-tighter whitespace-nowrap shadow-sm text-slate-900 font-bold">
+                    Ref: KGN-2025-084-A
+                </div>
+            </div>
+        </div>
+
+        <!-- SIDEBARS CONTAINER -->
+        <div class="absolute inset-0 z-40 pointer-events-none">
+            <!-- LEFT SIDEBAR: LAYERS & PROJECTS -->
+            <aside class="absolute left-6 top-6 bottom-32 w-72 pointer-events-auto flex flex-col gap-3 sidebar-transition">
+                <div class="flex-none glass rounded-lg p-4 shadow-sm border-slate-200">
+                     <div class="flex items-center gap-3">
+                        <div class="w-6 h-6 bg-accent-blue rounded flex items-center justify-center">
+                            <iconify-icon icon="lucide:landmark" class="text-white text-sm"></iconify-icon>
+                        </div>
+                        <span class="text-sm font-black tracking-tight text-slate-900 uppercase">Municipal Planning Authority</span>
+                    </div>
+                </div>
+                <div class="flex-1 glass rounded-lg p-4 flex flex-col overflow-hidden shadow-sm border-slate-200">
+                    <div class="flex items-center justify-between mb-5">
+                        <h3 class="ui-label">Geospatial Layers</h3>
+                        <button id="layer-settings-btn" class="p-1 hover:bg-slate-100 rounded transition-colors text-slate-400"><iconify-icon icon="lucide:sliders-horizontal" class="text-lg"></iconify-icon></button>
+                    </div>
+                    <div class="space-y-2 overflow-y-auto custom-scrollbar pr-1">
+                        <div class="p-2.5 rounded-md border border-slate-200 bg-white group cursor-pointer">
+                            <div class="flex items-center gap-3">
+                                <div class="w-7 h-7 rounded bg-slate-50 border border-slate-100 flex items-center justify-center accent-blue">
+                                    <iconify-icon icon="lucide:building-2" class="text-sm"></iconify-icon>
+                                </div>
+                                <div class="flex-1">
+                                    <p class="text-[11px] font-bold text-slate-900">Proposed Structural</p>
+                                    <p class="text-[9px] text-slate-500">Count: 08 active</p>
+                                </div>
+                                <div class="flex items-center">
+                                    <input type="checkbox" checked class="accent-[#003F7C] h-3.5 w-3.5">
+                                </div>
+                            </div>
+                        </div>
+                        <div class="p-2.5 rounded-md border border-slate-100 hover:border-slate-200 bg-white/50 transition-all cursor-pointer group">
+                            <div class="flex items-center gap-3">
+                                <div class="w-7 h-7 rounded bg-slate-50 border border-slate-100 flex items-center justify-center text-slate-400 group-hover:accent-blue transition-colors">
+                                    <iconify-icon icon="lucide:traffic-cone" class="text-sm"></iconify-icon>
+                                </div>
+                                <div class="flex-1">
+                                    <p class="text-[11px] font-bold text-slate-800">Infrastructure Zones</p>
+                                    <p class="text-[9px] text-slate-500">Public Utility</p>
+                                </div>
+                                <div class="flex items-center">
+                                    <input type="checkbox" class="accent-[#003F7C] h-3.5 w-3.5">
+                                </div>
+                            </div>
+                        </div>
+                        <div class="p-2.5 rounded-md border border-slate-100 hover:border-slate-200 bg-white/50 transition-all cursor-pointer group">
+                            <div class="flex items-center gap-3">
+                                <div class="w-7 h-7 rounded bg-slate-50 border border-slate-100 flex items-center justify-center text-slate-400 group-hover:accent-blue transition-colors">
+                                    <iconify-icon icon="lucide:leaf" class="text-sm"></iconify-icon>
+                                </div>
+                                <div class="flex-1">
+                                    <p class="text-[11px] font-bold text-slate-800">Ecological Impact</p>
+                                    <p class="text-[9px] text-slate-500">CO2 Heatmap</p>
+                                </div>
+                                <div class="flex items-center">
+                                    <input type="checkbox" class="accent-[#003F7C] h-3.5 w-3.5">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="mt-8">
+                        <h3 class="ui-label mb-3">District Zoning Summary</h3>
+                        <div class="space-y-4">
+                            <div>
+                                <div class="flex items-center justify-between text-[10px] mb-1">
+                                    <span class="font-medium text-slate-600 uppercase">Princess St. Central</span>
+                                    <span class="accent-blue font-bold">NOMINAL</span>
+                                </div>
+                                <div class="w-full bg-slate-200 rounded-sm h-1.5">
+                                    <div class="bg-accent-blue h-1.5 rounded-sm w-[85%]"></div>
+                                </div>
+                            </div>
+                            <div>
+                                <div class="flex items-center justify-between text-[10px] mb-1">
+                                    <span class="font-medium text-slate-600 uppercase">Portsmouth District</span>
+                                    <span class="text-amber-700 font-bold">WARNING</span>
+                                </div>
+                                <div class="w-full bg-slate-200 rounded-sm h-1.5">
+                                    <div class="bg-amber-600 h-1.5 rounded-sm w-[40%]"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </aside>
+
+            <!-- RIGHT SIDEBAR: PROPERTIES & IMPACT -->
+            <aside class="absolute right-6 top-6 bottom-32 w-80 pointer-events-auto sidebar-transition">
+                <div class="glass rounded-lg p-5 shadow-md h-full border-slate-200 overflow-y-auto custom-scrollbar">
+                    <div class="flex items-center justify-between mb-6 pb-4 border-b border-slate-100">
+                         <div class="flex items-center gap-2">
+                            <iconify-icon icon="lucide:file-text" class="text-xl text-slate-400"></iconify-icon>
+                            <h2 class="text-sm font-black text-slate-900 uppercase tracking-tight">Metric Analysis</h2>
+                        </div>
+                        <button id="export-btn" class="text-[10px] font-black accent-blue border border-accent-blue px-2 py-0.5 rounded hover:bg-blue-50">EXPORT CSV</button>
+                    </div>
+
+                    <div class="grid grid-cols-1 gap-3 mb-6">
+                        <div class="bg-slate-50 rounded-md p-3 border border-slate-200">
+                            <p class="ui-label mb-1">CO2 Displacement</p>
+                            <p class="text-lg font-bold text-slate-900 serif-font">142.08 <span class="text-[10px] text-slate-500 font-sans uppercase ml-1">Tonnes / PA</span></p>
+                        </div>
+                        <div class="bg-slate-50 rounded-md p-3 border border-slate-200">
+                            <p class="ui-label mb-1">Acoustic Profile</p>
+                            <p class="text-lg font-bold text-rose-700 serif-font">64.2 <span class="text-[10px] text-slate-500 font-sans uppercase ml-1">Decibels</span></p>
+                        </div>
+                    </div>
+
+                    <div class="space-y-4 text-xs">
+                        <div class="flex items-center justify-between border-b border-slate-50 pb-2">
+                            <span class="text-slate-500 uppercase font-medium">Maximum Elevation</span>
+                            <span class="font-bold text-slate-900">42.50 m</span>
+                        </div>
+                        <div class="flex items-center justify-between border-b border-slate-50 pb-2">
+                            <span class="text-slate-500 uppercase font-medium">Structural Material</span>
+                            <span class="font-bold text-slate-900 uppercase">Concrete B40</span>
+                        </div>
+                        <div class="flex items-center justify-between border-b border-slate-50 pb-2">
+                            <span class="text-slate-500 uppercase font-medium">Footprint Area</span>
+                            <span class="font-bold text-slate-900">12,400 m²</span>
+                        </div>
+
+                        <div class="pt-4">
+                            <p class="ui-label mb-4">Traffic Flow Projection</p>
+                            <div class="h-24 flex items-end justify-between gap-1">
+                                <div class="w-full bg-slate-200 h-[40%]"></div>
+                                <div class="w-full bg-slate-300 h-[60%]"></div>
+                                <div class="w-full bg-slate-400 h-[80%]"></div>
+                                <div class="w-full bg-[#003F7C] h-[100%]"></div>
+                                <div class="w-full bg-slate-400 h-[75%]"></div>
+                                <div class="w-full bg-slate-300 h-[50%]"></div>
+                                <div class="w-full bg-slate-200 h-[30%]"></div>
+                            </div>
+                            <div class="flex justify-between text-[8px] text-slate-400 mt-2 font-bold">
+                                <span>0800 HRS</span><span>1200 HRS</span><span>1700 HRS</span><span>2200 HRS</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </aside>
+        </div>
+
+        <!-- FIXED BOTTOM PANEL: INTEGRATED TIMELINE -->
+        <div class="absolute bottom-0 left-0 right-0 z-50 glass border-t border-slate-300 px-8 py-4 flex items-center gap-10 shadow-lg">
+            <div class="flex items-center gap-4 shrink-0 border-r border-slate-200 pr-10">
+                <button id="play-sim-btn" class="w-10 h-10 rounded bg-accent-blue flex items-center justify-center text-white hover:bg-slate-900 transition-colors shadow-sm">
+                    <iconify-icon icon="lucide:play-circle" class="text-xl"></iconify-icon>
+                </button>
+                <div>
+                    <p class="text-xs font-black text-slate-900 uppercase tracking-tight serif-font">Simulation Core</p>
+                    <p class="text-[9px] text-slate-500 font-bold uppercase tracking-widest">Phase: Site Preparation</p>
+                </div>
+            </div>
+
+            <div class="flex-1 flex flex-col gap-3">
+                <div class="relative h-1.5 w-full bg-slate-200 rounded-sm cursor-pointer">
+                    <div class="absolute left-0 top-0 h-full w-[25%] bg-accent-blue rounded-sm transition-all"></div>
+                    <div class="absolute left-[25%] top-1/2 -translate-y-1/2 w-4 h-4 rounded-sm bg-white border border-slate-400 shadow-sm"></div>
+                </div>
+                <div class="flex justify-between px-0.5 text-[9px] text-slate-500 font-black uppercase">
+                    <span class="accent-blue">Fiscal Q1 2025</span>
+                    <span>Q2 2025</span>
+                    <span>Q3 2025</span>
+                    <span>Q4 2025</span>
+                    <span>Projected 2026</span>
+                    <span>Projected 2027</span>
+                </div>
+            </div>
+
+            <div class="flex items-center gap-4 shrink-0 border-l border-slate-200 pl-10">
+                <div class="flex flex-col items-end">
+                    <span class="ui-label mb-1">Active Timestamp</span>
+                    <div class="flex items-center gap-2 bg-slate-50 px-3 py-1.5 rounded border border-slate-200">
+                        <iconify-icon icon="lucide:clock" class="text-slate-400 text-sm"></iconify-icon>
+                        <span class="text-[10px] font-black text-slate-700 uppercase">07 MARCH 2025</span>
+                    </div>
+                </div>
+                <div class="flex flex-col gap-1">
+                    <button id="sys-settings-btn" class="p-1.5 bg-white border border-slate-200 rounded text-slate-500 hover:text-slate-900 transition-colors"><iconify-icon icon="lucide:settings"></iconify-icon></button>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

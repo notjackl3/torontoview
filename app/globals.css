@@ -1,0 +1,574 @@
+@import "tailwindcss";
+
+body {
+  font-family: "Archivo", sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+@layer components {
+  .instrument {
+    font-family: var(--font-script), "Instrument Serif", serif;
+  }
+  .lp {
+    min-height: 100vh;
+    background: #f4efe6;
+    color: #1a1611;
+  }
+
+  .lp-nav {
+    position: fixed;
+    top: 1.5rem;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 100;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: min(600px, 88vw);
+    padding: 0.85rem 1.8rem;
+    background: rgba(255, 255, 255, 0.88);
+    backdrop-filter: blur(14px);
+    border-radius: 50px;
+    box-shadow:
+      0 1px 3px rgba(0, 0, 0, 0.04),
+      0 8px 30px rgba(0, 0, 0, 0.06);
+  }
+
+  .lp-nav-logo {
+    font-family: var(--font-playfair), "Playfair Display", Georgia, serif;
+    font-weight: 700;
+    font-size: 1.15rem;
+    color: #1a1611;
+    letter-spacing: -0.01em;
+  }
+
+  .lp-nav-links {
+    display: flex;
+    gap: 1.75rem;
+  }
+
+  .lp-nav-links a {
+    font-size: 0.78rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: #3d362c;
+    text-decoration: none;
+    padding: 0.5rem 1rem;
+    border-radius: 9999px;
+    border: 2px solid transparent;
+    outline: none;
+    transition:
+      color 0.2s,
+      border-color 0.2s;
+  }
+
+  .lp-nav-links a:hover {
+    color: #1a1611;
+    border-color: #1a1611;
+  }
+
+  .lp-hero-wrap {
+    padding: 1.25rem;
+    padding-top: 5rem;
+    min-height: auto;
+    position: relative;
+  }
+
+  .lp-hero {
+    position: relative;
+    width: 100%;
+    height: 70vh;
+    min-height: 420px;
+    max-height: 600px;
+    border-radius: 24px;
+    overflow: hidden;
+    cursor: default;
+  }
+
+  .lp-hero-img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    user-select: none;
+  }
+
+  .lp-hero-vignette {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background:
+      linear-gradient(to top, rgba(0, 0, 0, 0.45) 0%, transparent 40%),
+      radial-gradient(
+        ellipse 80% 80% at 50% 50%,
+        transparent 40%,
+        rgba(0, 0, 0, 0.25) 100%
+      );
+  }
+
+  .lp-hero-title {
+    position: absolute;
+    bottom: 2.5rem;
+    left: 3rem;
+    z-index: 3;
+    font-family: var(--font-playfair), "Playfair Display", Georgia, serif;
+    font-style: italic;
+    font-weight: 400;
+    font-size: clamp(3rem, 7vw, 5.5rem);
+    color: #faf5eb;
+    letter-spacing: -0.02em;
+    line-height: 1;
+    text-shadow: 0 2px 30px rgba(0, 0, 0, 0.4);
+    margin: 0;
+  }
+
+  .lp-hero-cta {
+    position: absolute;
+    bottom: 2.8rem;
+    right: 3rem;
+    z-index: 3;
+    padding: 0.75rem 2rem;
+    font-family: var(--font-playfair), "Playfair Display", Georgia, serif;
+    font-size: 0.95rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #faf5eb;
+    text-decoration: none;
+    background: rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 50px;
+    transition:
+      background 0.25s,
+      transform 0.2s;
+    text-shadow: 0 1px 8px rgba(0, 0, 0, 0.3);
+  }
+
+  .lp-hero-cta:hover {
+    background: rgba(255, 255, 255, 0.18);
+    transform: translateY(-2px);
+  }
+
+  .lp-statement {
+    max-width: 780px;
+    margin: 0 auto;
+    padding: 10rem 2rem 8rem;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0;
+  }
+
+  /* thin gold rule */
+  .lp-stmt-rule {
+    display: block;
+    width: 48px;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, #c5a44e, transparent);
+    margin-bottom: 3rem;
+  }
+
+  /* small intro line */
+  .lp-stmt-small {
+    font-family: var(--font-archivo), sans-serif;
+    font-size: 0.78rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: #8a8279;
+    margin: 0 0 3.5rem;
+  }
+
+  /* grouped narrative block */
+  .lp-stmt-block {
+    margin: 0 0 2.5rem;
+  }
+
+  .lp-stmt-block .lp-stmt-line {
+    margin: 0;
+  }
+
+  /* "Shape a new Golden Age" line */
+  .lp-stmt-main {
+    font-family: var(--font-playfair), "Playfair Display", Georgia, serif;
+    font-size: clamp(1.5rem, 3vw, 2.1rem);
+    font-weight: 400;
+    line-height: 1.5;
+    color: #1a1611;
+    margin: 0 0 3rem;
+    letter-spacing: -0.01em;
+  }
+
+  /* subtitle / supporting text */
+  .lp-stmt-sub {
+    font-family: var(--font-archivo), sans-serif;
+    font-size: 0.82rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: #8a8279;
+    margin: 0 0 3.5rem;
+  }
+
+  /* CTA button */
+  .lp-stmt-cta {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.6rem;
+    margin-top: 1rem;
+    padding: 1rem 2.6rem;
+    font-family: var(--font-playfair), "Playfair Display", Georgia, serif;
+    font-size: 0.92rem;
+    letter-spacing: 0.06em;
+    color: #faf5eb;
+    background: linear-gradient(135deg, #1a1611 0%, #2d261c 100%);
+    border: 1px solid rgba(197, 164, 78, 0.2);
+    border-radius: 50px;
+    text-decoration: none;
+    box-shadow:
+      0 2px 12px rgba(26, 22, 17, 0.12),
+      0 0 0 0 rgba(197, 164, 78, 0);
+    transition:
+      transform 0.25s ease,
+      box-shadow 0.3s ease,
+      border-color 0.3s ease;
+  }
+
+  .lp-stmt-cta:hover {
+    transform: translateY(-2px);
+    border-color: rgba(197, 164, 78, 0.45);
+    box-shadow:
+      0 8px 30px rgba(26, 22, 17, 0.18),
+      0 0 0 1px rgba(197, 164, 78, 0.1);
+  }
+
+  /* fade-in / slide-up animation */
+  .lp-fade {
+    opacity: 0;
+    transform: translateY(24px);
+    animation: lpFadeUp 0.8s ease-out forwards;
+  }
+
+  /* consistent narrative lines */
+  .lp-stmt-line {
+    font-family: var(--font-playfair), "Playfair Display", Georgia, serif;
+    font-size: clamp(1.5rem, 3vw, 2.1rem);
+    font-weight: 400;
+    line-height: 1.5;
+    color: #1a1611;
+    margin: 0;
+    letter-spacing: -0.01em;
+  }
+
+  .lp-details {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1px;
+    max-width: 1000px;
+    margin: 0 auto 4rem;
+    padding: 0 2rem;
+  }
+
+  .lp-detail {
+    padding: 2.5rem 2rem;
+    border-top: 1px solid #e8e0d2;
+  }
+
+  .lp-detail-num {
+    font-family: var(--font-playfair), "Playfair Display", Georgia, serif;
+    font-style: italic;
+    font-size: 0.85rem;
+    color: #8a8279;
+    display: block;
+    margin-bottom: 1rem;
+  }
+
+  .lp-detail h3 {
+    font-family: var(--font-playfair), "Playfair Display", Georgia, serif;
+    font-size: 1.35rem;
+    font-weight: 600;
+    margin: 0 0 0.75rem;
+    letter-spacing: -0.01em;
+  }
+
+  .lp-detail p {
+    font-size: 0.92rem;
+    line-height: 1.7;
+    color: #8a8279;
+    margin: 0;
+  }
+
+  .lp-detail-link {
+    display: inline-block;
+    margin-top: 1rem;
+    font-family: var(--font-playfair), "Playfair Display", Georgia, serif;
+    font-style: italic;
+    font-size: 0.88rem;
+    color: #3d362c;
+    text-decoration: none;
+    transition: color 0.2s;
+  }
+
+  .lp-detail-link:hover {
+    color: #1a1611;
+  }
+
+  .lp-closing {
+    text-align: center;
+    padding: 5rem 2rem;
+    border-top: 1px solid #e8e0d2;
+  }
+
+  .lp-closing-text {
+    font-family: var(--font-playfair), "Playfair Display", Georgia, serif;
+    font-style: italic;
+    font-size: 1rem;
+    color: #8a8279;
+    margin: 0 0 2rem;
+    letter-spacing: 0.04em;
+  }
+
+  .lp-closing-ctas {
+    display: flex;
+    gap: 1rem;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+
+  .lp-btn-warm {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.8rem 2rem;
+    font-family: var(--font-playfair), "Playfair Display", Georgia, serif;
+    font-size: 0.9rem;
+    background: #1a1611;
+    color: #f4efe6;
+    border-radius: 50px;
+    text-decoration: none;
+    letter-spacing: 0.02em;
+    transition:
+      transform 0.15s,
+      box-shadow 0.25s;
+  }
+
+  .lp-btn-warm:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 24px rgba(26, 22, 17, 0.18);
+  }
+
+  .lp-btn-outline {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.8rem 2rem;
+    font-family: var(--font-playfair), "Playfair Display", Georgia, serif;
+    font-size: 0.9rem;
+    background: transparent;
+    color: #3d362c;
+    border: 1px solid #e8e0d2;
+    border-radius: 50px;
+    text-decoration: none;
+    letter-spacing: 0.02em;
+    transition:
+      border-color 0.2s,
+      color 0.2s;
+  }
+
+  .lp-btn-outline:hover {
+    border-color: #3d362c;
+    color: #1a1611;
+  }
+
+  .lp-videos {
+    padding: 5rem 2rem;
+    text-align: center;
+  }
+
+  .lp-videos-title {
+    font-family: var(--font-playfair), "Playfair Display", Georgia, serif;
+    font-size: 2rem;
+    font-weight: 700;
+    margin-bottom: 3rem;
+    color: #1a1611;
+  }
+
+  .lp-videos-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 2rem;
+    max-width: 1100px;
+    margin: 0 auto;
+  }
+
+  .lp-video-card {
+    border-radius: 16px;
+    overflow: hidden;
+    background: #1a1611;
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12);
+  }
+
+  .lp-video-card video {
+    width: 100%;
+    display: block;
+    aspect-ratio: 16/9;
+    object-fit: cover;
+  }
+
+  .lp-video-label {
+    padding: 1rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: #f4efe6;
+  }
+
+  .lp-footer {
+    text-align: center;
+    padding: 2.5rem 2rem;
+    border-top: 1px solid #e8e0d2;
+  }
+
+  .lp-footer a {
+    font-size: 0.78rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #8a8279;
+    text-decoration: none;
+    transition: color 0.2s;
+  }
+
+  .lp-footer a:hover {
+    color: #1a1611;
+  }
+}
+
+@keyframes lpFadeUp {
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (max-width: 768px) {
+  .lp-hero-wrap {
+    padding: 0.75rem;
+    padding-top: 5rem;
+  }
+
+  .lp-hero {
+    height: 100%;
+    border-radius: 18px;
+  }
+
+  .lp-hero-title {
+    bottom: 2rem;
+    left: 1.75rem;
+  }
+
+  .lp-hero-cta {
+    bottom: 2rem;
+    right: 1.75rem;
+    font-size: 0.82rem;
+    padding: 0.6rem 1.4rem;
+  }
+
+  .lp-details {
+    grid-template-columns: 1fr;
+    padding: 0 1.25rem;
+  }
+
+  .lp-statement {
+    padding: 6rem 1.25rem 5rem;
+  }
+
+  .lp-stmt-small {
+    margin-bottom: 2.5rem;
+  }
+
+  .lp-stmt-rule {
+    margin-bottom: 2rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .lp-hero-cta {
+    bottom: auto;
+    top: 5.5rem;
+    right: 1.25rem;
+  }
+
+  .lp-hero-title {
+    font-size: 2.8rem;
+    bottom: 1.5rem;
+    left: 1.25rem;
+  }
+
+  .lp-closing-ctas {
+    flex-direction: column;
+    align-items: center;
+  }
+}
+
+h1,
+h2,
+h3,
+.serif-font {
+  font-family: "Lora", serif;
+}
+
+/* Glass morphism effect — dark translucent glass */
+.glass {
+  background: rgba(24, 24, 27, 0.6);
+  @apply backdrop-blur-xl;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* Lighter glass variant for nested cards / form sections */
+.glass-inner {
+  background: rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+/* Map gradient overlay */
+.map-gradient {
+  background: radial-gradient(
+    circle at center,
+    transparent 0%,
+    rgba(0, 0, 0, 0.15) 100%
+  );
+}
+
+/* Custom scrollbar for dark glass theme */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 4px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 4px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+/* Sidebar transition */
+.sidebar-transition {
+  transition: all 0.2s ease-in-out;
+}
+
+/* UI Label utility class */
+.ui-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: rgba(255, 255, 255, 0.5);
+}
