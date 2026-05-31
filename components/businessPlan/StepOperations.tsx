@@ -26,15 +26,15 @@ export function StepOperations() {
 
       <div className="space-y-5">
         <div>
-          <p className="mb-2 text-[10px] font-bold uppercase tracking-tight text-zinc-400">
+          <p className="mb-2 text-[10px] font-bold uppercase tracking-tight text-slate-600">
             Hours of operation
           </p>
-          <div className="rounded-md border border-white/10 overflow-hidden divide-y divide-white/5">
+          <div className="rounded-md border border-[#003F7C]/12 overflow-hidden divide-y divide-[#003F7C]/8">
             {WEEKDAYS.map(({ key, label }) => {
               const day = ops.hours[key];
               return (
                 <div key={key} className="grid grid-cols-[60px_60px_1fr_1fr] items-center gap-2 px-3 py-2">
-                  <span className="text-[10px] font-bold uppercase tracking-tight text-zinc-300">
+                  <span className="text-[10px] font-bold uppercase tracking-tight text-slate-700">
                     {label}
                   </span>
                   <button
@@ -50,8 +50,8 @@ export function StepOperations() {
                     }
                     className={`rounded px-2 py-1 text-[9px] font-bold uppercase tracking-tight ${
                       day.open
-                        ? "bg-emerald-500/20 text-emerald-300 border border-emerald-400/30"
-                        : "bg-white/5 text-zinc-500 border border-white/10"
+                        ? "bg-emerald-100 text-emerald-800 border border-emerald-300"
+                        : "bg-white text-slate-500 border border-[#003F7C]/12"
                     }`}
                   >
                     {day.open ? "Open" : "Closed"}
@@ -72,7 +72,7 @@ export function StepOperations() {
                         },
                       }))
                     }
-                    className="bg-white/5 border border-white/10 rounded px-2 py-1 text-xs text-zinc-200 disabled:opacity-40"
+                    className="bg-white border border-[#003F7C]/12 rounded px-2 py-1 text-xs text-slate-800 disabled:opacity-40"
                   />
                   <input
                     type="time"
@@ -90,7 +90,7 @@ export function StepOperations() {
                         },
                       }))
                     }
-                    className="bg-white/5 border border-white/10 rounded px-2 py-1 text-xs text-zinc-200 disabled:opacity-40"
+                    className="bg-white border border-[#003F7C]/12 rounded px-2 py-1 text-xs text-slate-800 disabled:opacity-40"
                   />
                 </div>
               );

@@ -12,9 +12,15 @@ export default function PlanPage({
 }) {
   const { planId } = use(params);
   const searchParams = useSearchParams();
+  // Building id can arrive via three names:
+  //   - osmBuildingId : an existing OSM building the user is leasing (move-in)
+  //   - placedBuildingId : a building the user just placed via new-build /
+  //     demolish-rebuild
+  //   - buildingId : legacy / generic catch-all
   const buildingId =
     searchParams.get("buildingId") ??
     searchParams.get("osmBuildingId") ??
+    searchParams.get("placedBuildingId") ??
     undefined;
 
   return (

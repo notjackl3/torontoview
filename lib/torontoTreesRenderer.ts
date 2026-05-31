@@ -1,9 +1,11 @@
 /**
- * Toronto street-trees layer. Renders ~5-6k tree points downtown as two
- * InstancedMeshes (one trunk, one foliage) for one draw call each.
+ * Toronto street-trees layer. Renders ~5-6k tree points downtown from the
+ * City of Toronto Open Data "Street Tree Data" dataset (open.toronto.ca).
  *
- * Trunk diameter scales with DBH_TRUNK (cm). Foliage radius is a rough
- * function of DBH (mature city trees are ~10-20× their trunk diameter).
+ * Each tree carries (lng, lat, COMMON_NAME, DBH_TRUNK). We bucket by species
+ * family (conifer / columnar / flowering / broadleaf) and emit one trunk +
+ * one foliage InstancedMesh per bucket, so the whole layer stays at 8 draw
+ * calls regardless of tree count. Trunk size scales with DBH.
  */
 import * as THREE from "three";
 import { CityProjection } from "./projection";
@@ -15,12 +17,79 @@ interface TreeFeature {
   dbh: number; // cm
 }
 
-const TRUNK_COLOR = 0x7a4f2e;
-const FOLIAGE_COLOR = 0x4f9a3a;
+type SpeciesFamily = "conifer" | "columnar" | "flowering" | "broadleaf";
 
-// World scale factor — matches CityProjection.SCALE_FACTOR so the tree's
-// real-world size is preserved.
+interface FamilyStyle {
+  trunkColor: number;
+  foliageColor: number;
+  foliageEmissive: number;
+  /** Foliage geometry — instanced once per family. */
+  foliageGeo: THREE.BufferGeometry;
+  /** Per-tree foliage radius multiplier (relative to broadleaf default). */
+  foliageScale: number;
+  /** Aspect ratio of the foliage crown (vertical / horizontal). */
+  crownAspect: number;
+}
+
 const SCALE = 10 / 1.4;
+
+function classify(species: string): SpeciesFamily {
+  const s = species.replace(/^"|"$/g, "").toLowerCase();
+  if (/pine|spruce|cedar|fir|hemlock|yew|juniper|larch/.test(s)) return "conifer";
+  if (/columnar|fastigiate|poplar/.test(s)) return "columnar";
+  if (
+    /cherry|magnolia|crabapple|dogwood|redbud|hawthorn|pear|apple|plum|lilac|serviceberry/.test(
+      s,
+    )
+  ) {
+    return "flowering";
+  }
+  return "broadleaf";
+}
+
+function makeStyles(): Record<SpeciesFamily, FamilyStyle> {
+  // Low-poly geos so 6k instances stay cheap.
+  const sphere = new THREE.SphereGeometry(1, 6, 5);
+  const cone = new THREE.ConeGeometry(1, 1, 6);
+  cone.translate(0, 0.5, 0); // origin at base of cone, point at +Y
+  const tallSphere = new THREE.SphereGeometry(1, 6, 5);
+  const flowerSphere = new THREE.SphereGeometry(1, 6, 5);
+
+  return {
+    broadleaf: {
+      trunkColor: 0x7a4f2e,
+      foliageColor: 0x4f9a3a,
+      foliageEmissive: 0x2f6f2f,
+      foliageGeo: sphere,
+      foliageScale: 1.0,
+      crownAspect: 1.0,
+    },
+    conifer: {
+      trunkColor: 0x6b3f24,
+      foliageColor: 0x2c5e3a,
+      foliageEmissive: 0x1a4025,
+      foliageGeo: cone,
+      foliageScale: 0.9,
+      crownAspect: 2.4, // tall narrow cone
+    },
+    columnar: {
+      trunkColor: 0x7a4f2e,
+      foliageColor: 0x3d7d3a,
+      foliageEmissive: 0x2a5a2a,
+      foliageGeo: tallSphere,
+      foliageScale: 0.55,
+      crownAspect: 3.0, // tall narrow ellipsoid
+    },
+    flowering: {
+      trunkColor: 0x8b5a3c,
+      foliageColor: 0xe8a8c8, // soft pink crown
+      foliageEmissive: 0xa05c7a,
+      foliageGeo: flowerSphere,
+      foliageScale: 0.75,
+      crownAspect: 0.85, // squat rounded crown
+    },
+  };
+}
 
 export function renderTorontoTreesLayer(trees: TreeFeature[]): THREE.Group {
   const group = new THREE.Group();
@@ -28,75 +97,103 @@ export function renderTorontoTreesLayer(trees: TreeFeature[]): THREE.Group {
 
   if (trees.length === 0) return group;
 
-  // Shared per-tree geometry. Picked low-poly so 6k instances stay cheap.
+  // Bucket trees by species family.
+  const buckets: Record<SpeciesFamily, TreeFeature[]> = {
+    broadleaf: [],
+    conifer: [],
+    columnar: [],
+    flowering: [],
+  };
+  for (const tree of trees) buckets[classify(tree.species)].push(tree);
+
+  const styles = makeStyles();
   const trunkGeo = new THREE.CylinderGeometry(1, 1, 1, 6);
-  trunkGeo.translate(0, 0.5, 0); // origin at base
-  const foliageGeo = new THREE.SphereGeometry(1, 6, 5);
-
-  const trunkMat = new THREE.MeshPhongMaterial({
-    color: TRUNK_COLOR,
-    emissive: new THREE.Color(TRUNK_COLOR),
-    emissiveIntensity: 0.18,
-    shininess: 8,
-  });
-  const foliageMat = new THREE.MeshPhongMaterial({
-    color: FOLIAGE_COLOR,
-    emissive: new THREE.Color(0x2f6f2f),
-    emissiveIntensity: 0.28,
-    shininess: 10,
-  });
-
-  const trunkMesh = new THREE.InstancedMesh(trunkGeo, trunkMat, trees.length);
-  const foliageMesh = new THREE.InstancedMesh(
-    foliageGeo,
-    foliageMat,
-    trees.length
-  );
-  trunkMesh.userData.isTorontoTrees = true;
-  foliageMesh.userData.isTorontoTrees = true;
+  trunkGeo.translate(0, 0.5, 0);
 
   const m = new THREE.Matrix4();
   const q = new THREE.Quaternion();
   const v = new THREE.Vector3();
   const s = new THREE.Vector3();
+  // Trees sit on the ground. With the renderer's logarithmic depth buffer
+  // (see sceneManager) we no longer need a huge lift to dodge z-fighting at
+  // the overhead view — a 0.5-unit lift keeps the trunk base just above any
+  // ground texture without making trees look airborne at close zoom.
+  const BASE_LIFT = 0.5;
 
-  for (let i = 0; i < trees.length; i++) {
-    const tree = trees[i];
-    const world = CityProjection.projectToWorld([tree.lng, tree.lat]);
+  for (const family of Object.keys(buckets) as SpeciesFamily[]) {
+    const list = buckets[family];
+    if (list.length === 0) continue;
+    const style = styles[family];
 
-    // Convert DBH (cm) to a sensible tree height (m): ~30× trunk diameter is
-    // typical for mature street trees, capped at 20 m. Unknown DBH → 7 m.
-    const dbhM = tree.dbh > 0 ? tree.dbh / 100 : 0.2;
-    const treeHeightM = Math.min(Math.max(dbhM * 30, 4), 20);
-    const trunkHeightM = treeHeightM * 0.5;
-    const trunkRadiusM = Math.max(dbhM / 2, 0.05);
-    const foliageRadiusM = Math.max(treeHeightM * 0.25, 1.5);
-    const foliageCenterYm = trunkHeightM + foliageRadiusM * 0.6;
+    const trunkMat = new THREE.MeshPhongMaterial({
+      color: style.trunkColor,
+      emissive: new THREE.Color(style.trunkColor),
+      emissiveIntensity: 0.18,
+      shininess: 8,
+    });
+    const foliageMat = new THREE.MeshPhongMaterial({
+      color: style.foliageColor,
+      emissive: new THREE.Color(style.foliageEmissive),
+      emissiveIntensity: 0.28,
+      shininess: 10,
+    });
 
-    // Trunk: scale (radius, height, radius) — apply world SCALE.
-    v.set(world.x, 0, world.z);
-    s.set(trunkRadiusM * SCALE, trunkHeightM * SCALE, trunkRadiusM * SCALE);
-    m.compose(v, q, s);
-    trunkMesh.setMatrixAt(i, m);
-
-    // Foliage: positioned above trunk, scaled to foliage radius.
-    v.set(world.x, foliageCenterYm * SCALE, world.z);
-    s.set(
-      foliageRadiusM * SCALE,
-      foliageRadiusM * SCALE,
-      foliageRadiusM * SCALE
+    const trunkMesh = new THREE.InstancedMesh(trunkGeo, trunkMat, list.length);
+    const foliageMesh = new THREE.InstancedMesh(
+      style.foliageGeo,
+      foliageMat,
+      list.length,
     );
-    m.compose(v, q, s);
-    foliageMesh.setMatrixAt(i, m);
+    trunkMesh.userData.isTorontoTrees = true;
+    foliageMesh.userData.isTorontoTrees = true;
+    trunkMesh.name = `trees-${family}-trunk`;
+    foliageMesh.name = `trees-${family}-foliage`;
+
+    for (let i = 0; i < list.length; i++) {
+      const tree = list[i];
+      const world = CityProjection.projectToWorld([tree.lng, tree.lat]);
+
+      // DBH (cm) → tree height (m). ~30× trunk diameter is typical for mature
+      // street trees; clamp to a sensible window so missing DBH still renders.
+      const dbhM = tree.dbh > 0 ? tree.dbh / 100 : 0.2;
+      const treeHeightM = Math.min(Math.max(dbhM * 30, 4), 20);
+      const trunkHeightM = treeHeightM * 0.5;
+      const trunkRadiusM = Math.max(dbhM / 2, 0.05);
+
+      const baseFoliageR = Math.max(treeHeightM * 0.25, 1.5);
+      const foliageRadiusM = baseFoliageR * style.foliageScale;
+      const foliageHeightM = foliageRadiusM * style.crownAspect;
+      const foliageCenterYm =
+        family === "conifer"
+          ? trunkHeightM // cone sits on top of trunk (origin = cone base)
+          : trunkHeightM + foliageHeightM * 0.5;
+
+      v.set(world.x, BASE_LIFT, world.z);
+      s.set(trunkRadiusM * SCALE, trunkHeightM * SCALE, trunkRadiusM * SCALE);
+      m.compose(v, q, s);
+      trunkMesh.setMatrixAt(i, m);
+
+      v.set(world.x, foliageCenterYm * SCALE + BASE_LIFT, world.z);
+      s.set(
+        foliageRadiusM * SCALE,
+        foliageHeightM * SCALE,
+        foliageRadiusM * SCALE,
+      );
+      m.compose(v, q, s);
+      foliageMesh.setMatrixAt(i, m);
+    }
+
+    trunkMesh.instanceMatrix.needsUpdate = true;
+    foliageMesh.instanceMatrix.needsUpdate = true;
+    group.add(trunkMesh);
+    group.add(foliageMesh);
   }
 
-  trunkMesh.instanceMatrix.needsUpdate = true;
-  foliageMesh.instanceMatrix.needsUpdate = true;
-
-  group.add(trunkMesh);
-  group.add(foliageMesh);
-
-  console.log(`✅ Toronto trees layer: ${trees.length} trees`);
+  console.log(
+    `✅ Toronto trees layer: ${trees.length} trees ` +
+      `(broadleaf ${buckets.broadleaf.length}, conifer ${buckets.conifer.length}, ` +
+      `columnar ${buckets.columnar.length}, flowering ${buckets.flowering.length})`,
+  );
   return group;
 }
 

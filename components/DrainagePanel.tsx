@@ -17,6 +17,7 @@ import {
   type DrainageAnalysis,
   type BuildingSpec,
 } from "@/lib/water";
+import { type BuildMode, involvesNewConstruction } from "@/lib/buildMode";
 
 interface PlacedBuilding {
   id: string;
@@ -24,6 +25,7 @@ interface PlacedBuilding {
   lng: number;
   scale?: { x: number; y: number; z: number };
   timeline?: { zoneType?: string; startDate?: string; durationDays?: number };
+  buildMode?: BuildMode;
 }
 
 interface DrainagePanelProps {
@@ -68,13 +70,57 @@ export default function DrainagePanel({
   const [selectedIdx, setSelectedIdx] = useState(0);
   const [expandedMitigation, setExpandedMitigation] = useState<number | null>(null);
 
-  const specs = useMemo(() => buildings.map(buildingToSpec), [buildings]);
+  // Only buildings that actually change the site's impervious surface
+  // contribute new runoff. Move-in / fit-out reuses the existing footprint,
+  // so we skip those from the analysis — their stormwater is unchanged.
+  const groundUpBuildings = useMemo(
+    () => buildings.filter((b) => involvesNewConstruction(b.buildMode)),
+    [buildings],
+  );
+  const specs = useMemo(
+    () => groundUpBuildings.map(buildingToSpec),
+    [groundUpBuildings],
+  );
   const analysis = useMemo(() => analyzeMultipleDrainage(specs), [specs]);
 
   if (!visible) return null;
 
   const current = analysis.buildings[selectedIdx];
   const totals = analysis.totals;
+
+  // Move-in–only state: nothing changes on the parcel, so there's no new
+  // drainage impact to compute.
+  const allMoveIn =
+    buildings.length > 0 && groundUpBuildings.length === 0;
+
+  if (allMoveIn) {
+    return (
+      <div>
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <Droplets className="text-blue-400" size={20} />
+            <h3 className="font-bold text-white text-sm uppercase tracking-tight">
+              Drainage Impact
+            </h3>
+          </div>
+          <button onClick={onClose} className="p-1 hover:bg-slate-900/8 rounded">
+            <X size={16} className="text-slate-500" />
+          </button>
+        </div>
+        <div className="rounded-md border border-emerald-300 bg-emerald-50 p-3">
+          <p className="text-[11px] font-bold text-emerald-900 uppercase tracking-wide mb-1">
+            No new site disturbance
+          </p>
+          <p className="text-[11px] text-emerald-900/80 leading-relaxed">
+            You&rsquo;re moving into an existing building, so the parcel&rsquo;s
+            impervious surface and the City&rsquo;s existing stormwater management
+            for this site don&rsquo;t change. Drainage / SWM review only applies
+            to ground-up construction or demolition-and-rebuild.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   if (!buildings.length) {
     return (
@@ -86,11 +132,11 @@ export default function DrainagePanel({
               Drainage Impact
             </h3>
           </div>
-          <button onClick={onClose} className="p-1 hover:bg-white/10 rounded">
-            <X size={16} className="text-zinc-400" />
+          <button onClick={onClose} className="p-1 hover:bg-slate-900/8 rounded">
+            <X size={16} className="text-slate-500" />
           </button>
         </div>
-        <p className="text-zinc-400 text-sm">No buildings placed. Add buildings to analyze drainage impact.</p>
+        <p className="text-slate-500 text-sm">No buildings placed. Add buildings to analyze drainage impact.</p>
       </div>
     );
   }
@@ -98,7 +144,7 @@ export default function DrainagePanel({
   return (
     <div>
       {/* Header */}
-      <div className="pb-3 mb-3 border-b border-white/10">
+      <div className="pb-3 mb-3 border-b border-slate-900/10">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Droplets className="text-blue-400" size={20} />
@@ -106,20 +152,27 @@ export default function DrainagePanel({
               Drainage Impact Analysis
             </h3>
           </div>
-          <button onClick={onClose} className="p-1 hover:bg-white/10 rounded">
-            <X size={16} className="text-zinc-400" />
+          <button onClick={onClose} className="p-1 hover:bg-slate-900/8 rounded">
+            <X size={16} className="text-slate-500" />
           </button>
         </div>
         {buildings.length > 1 && (
-          <p className="text-xs text-zinc-400 mt-1">
-            {buildings.length} buildings analyzed
+          <p className="text-xs text-slate-500 mt-1">
+            {groundUpBuildings.length} ground-up site
+            {groundUpBuildings.length === 1 ? "" : "s"} analyzed
+            {buildings.length > groundUpBuildings.length && (
+              <span className="text-slate-400">
+                {" "}
+                · {buildings.length - groundUpBuildings.length} move-in skipped
+              </span>
+            )}
           </p>
         )}
       </div>
 
       <div className="space-y-4">
         {/* Aggregate totals (when multiple buildings) */}
-        {buildings.length > 1 && (
+        {groundUpBuildings.length > 1 && (
           <div className="grid grid-cols-3 gap-2">
             <StatCard
               label="Net Impervious"
@@ -139,17 +192,18 @@ export default function DrainagePanel({
           </div>
         )}
 
-        {/* Building selector */}
-        {buildings.length > 1 && (
+        {/* Building selector — limited to ground-up builds, since move-in
+            sites don't contribute new runoff. */}
+        {groundUpBuildings.length > 1 && (
           <div className="flex gap-1.5 overflow-x-auto pb-1">
-            {buildings.map((b, i) => (
+            {groundUpBuildings.map((b, i) => (
               <button
                 key={b.id}
                 onClick={() => setSelectedIdx(i)}
                 className={`flex-shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
                   selectedIdx === i
                     ? "bg-blue-600 text-white"
-                    : "bg-white/5 text-zinc-400 hover:bg-white/10 hover:text-zinc-200"
+                    : "bg-slate-900/5 text-slate-500 hover:bg-slate-900/8 hover:text-slate-800"
                 }`}
               >
                 Building {i + 1}
@@ -166,7 +220,7 @@ export default function DrainagePanel({
                 <Row label="Building footprint" value={`${formatNumber(current.surface.buildingFootprintM2)} m²`} />
                 <Row label="Estimated parking" value={`${formatNumber(current.surface.parkingAreaM2)} m²`} />
                 <Row label="Access / sidewalks" value={`${formatNumber(current.surface.sidewalksAndAccessM2)} m²`} />
-                <div className="border-t border-white/5 pt-1.5 mt-1.5">
+                <div className="border-t border-slate-900/8 pt-1.5 mt-1.5">
                   <Row label="Total impervious" value={`${formatNumber(current.surface.totalImperviousM2)} m²`} bold />
                   <Row label="Previously impervious" value={`${formatNumber(current.surface.previousImperviousM2)} m²`} />
                   <Row
@@ -178,11 +232,11 @@ export default function DrainagePanel({
                 </div>
                 {/* Impervious bar */}
                 <div className="mt-2">
-                  <div className="flex justify-between text-[10px] text-zinc-500 mb-0.5">
+                  <div className="flex justify-between text-[10px] text-slate-400 mb-0.5">
                     <span>Before: {current.surface.imperviousPercentBefore}%</span>
                     <span>After: {current.surface.imperviousPercentAfter}%</span>
                   </div>
-                  <div className="h-2 bg-white/10 rounded-full overflow-hidden">
+                  <div className="h-2 bg-slate-900/8 rounded-full overflow-hidden">
                     <div
                       className="h-full bg-blue-500 rounded-full transition-all"
                       style={{ width: `${current.surface.imperviousPercentAfter}%` }}
@@ -196,7 +250,7 @@ export default function DrainagePanel({
             <Section title="Stormwater Runoff" icon={<Droplets size={14} />}>
               <table className="w-full text-xs">
                 <thead>
-                  <tr className="text-zinc-500 text-[10px] uppercase">
+                  <tr className="text-slate-400 text-[10px] uppercase">
                     <th className="text-left font-bold pb-1">Storm</th>
                     <th className="text-right font-bold pb-1">Before</th>
                     <th className="text-right font-bold pb-1">After</th>
@@ -207,13 +261,13 @@ export default function DrainagePanel({
                   {current.runoff.map((r) => (
                     <tr
                       key={r.returnPeriod}
-                      className={`border-t border-white/5 ${
+                      className={`border-t border-slate-900/8 ${
                         r.returnPeriod === '2-year' || r.returnPeriod === '100-year'
-                          ? 'font-semibold text-zinc-200'
-                          : 'text-zinc-400'
+                          ? 'font-semibold text-slate-800'
+                          : 'text-slate-500'
                       }`}
                     >
-                      <td className="py-1 text-zinc-300">{r.returnPeriod}</td>
+                      <td className="py-1 text-slate-700">{r.returnPeriod}</td>
                       <td className="py-1 text-right">{r.runoffBeforeMm} mm</td>
                       <td className="py-1 text-right">{r.runoffAfterMm} mm</td>
                       <td className="py-1 text-right text-blue-400">
@@ -224,12 +278,12 @@ export default function DrainagePanel({
                 </tbody>
               </table>
               {/* Peak flow */}
-              <div className="mt-2 pt-2 border-t border-white/5 space-y-1">
+              <div className="mt-2 pt-2 border-t border-slate-900/8 space-y-1">
                 {current.runoff
                   .filter((r) => r.returnPeriod === '2-year' || r.returnPeriod === '100-year')
                   .map((r) => (
                     <div key={r.returnPeriod} className="flex justify-between text-xs">
-                      <span className="text-zinc-400">{r.returnPeriod} peak flow increase</span>
+                      <span className="text-slate-500">{r.returnPeriod} peak flow increase</span>
                       <span className="font-semibold text-blue-400">
                         +{r.peakFlowIncreaseLps.toFixed(2)} L/s
                       </span>
@@ -243,7 +297,7 @@ export default function DrainagePanel({
               {/* Offset meter */}
               <div className="mb-3">
                 <div className="flex justify-between text-[10px] mb-0.5">
-                  <span className="text-zinc-400">Runoff offset (if all applied)</span>
+                  <span className="text-slate-500">Runoff offset (if all applied)</span>
                   <span
                     className={`font-bold ${
                       current.offsetPercent >= 100
@@ -256,7 +310,7 @@ export default function DrainagePanel({
                     {current.offsetPercent}%
                   </span>
                 </div>
-                <div className="h-2.5 bg-white/10 rounded-full overflow-hidden">
+                <div className="h-2.5 bg-slate-900/8 rounded-full overflow-hidden">
                   <div
                     className={`h-full rounded-full transition-all ${
                       current.offsetPercent >= 100
@@ -274,7 +328,7 @@ export default function DrainagePanel({
                 {current.mitigations.map((m, i) => (
                   <div
                     key={i}
-                    className="bg-white/5 rounded-lg border border-white/10 overflow-hidden"
+                    className="bg-slate-900/5 rounded-lg border border-slate-900/10 overflow-hidden"
                   >
                     <button
                       className="w-full flex items-center justify-between p-2.5 text-left"
@@ -290,7 +344,7 @@ export default function DrainagePanel({
                               : 'bg-zinc-500'
                           }`}
                         />
-                        <span className="text-xs font-semibold text-zinc-200">
+                        <span className="text-xs font-semibold text-slate-800">
                           {m.name}
                         </span>
                         <span className="text-[10px] text-blue-400 font-medium">
@@ -298,13 +352,13 @@ export default function DrainagePanel({
                         </span>
                       </div>
                       {expandedMitigation === i ? (
-                        <ChevronUp size={12} className="text-zinc-400" />
+                        <ChevronUp size={12} className="text-slate-500" />
                       ) : (
-                        <ChevronDown size={12} className="text-zinc-400" />
+                        <ChevronDown size={12} className="text-slate-500" />
                       )}
                     </button>
                     {expandedMitigation === i && (
-                      <div className="px-2.5 pb-2.5 text-[11px] text-zinc-400 space-y-1 border-t border-white/5 pt-2">
+                      <div className="px-2.5 pb-2.5 text-[11px] text-slate-500 space-y-1 border-t border-slate-900/8 pt-2">
                         <p>{m.description}</p>
                         <div className="flex gap-4 mt-1">
                           <span>Area: {formatNumber(m.areaRequiredM2)} m²</span>
@@ -334,9 +388,9 @@ export default function DrainagePanel({
 function StatCard({ label, value, unit }: { label: string; value: string; unit: string }) {
   return (
     <div className="bg-blue-500/10 rounded-lg p-2 text-center border border-blue-400/20">
-      <p className="text-[9px] font-bold text-zinc-500 uppercase">{label}</p>
+      <p className="text-[9px] font-bold text-slate-400 uppercase">{label}</p>
       <p className="text-sm font-bold text-blue-300">{value}</p>
-      <p className="text-[9px] text-zinc-500">{unit}</p>
+      <p className="text-[9px] text-slate-400">{unit}</p>
     </div>
   );
 }
@@ -351,8 +405,8 @@ function Section({
   children: React.ReactNode;
 }) {
   return (
-    <div className="bg-white/[0.03] rounded-lg border border-white/10 p-3">
-      <h4 className="text-[10px] font-bold text-zinc-400 uppercase mb-2 flex items-center gap-1.5">
+    <div className="bg-slate-900/[0.04] rounded-lg border border-slate-900/10 p-3">
+      <h4 className="text-[10px] font-bold text-slate-500 uppercase mb-2 flex items-center gap-1.5">
         {icon}
         {title}
       </h4>
@@ -374,10 +428,10 @@ function Row({
 }) {
   return (
     <div className="flex justify-between">
-      <span className={`text-zinc-400 ${bold ? 'font-semibold' : ''}`}>{label}</span>
+      <span className={`text-slate-500 ${bold ? 'font-semibold' : ''}`}>{label}</span>
       <span
         className={`${bold ? 'font-semibold' : ''} ${
-          highlight ? 'text-blue-400' : 'text-zinc-200'
+          highlight ? 'text-blue-400' : 'text-slate-800'
         }`}
       >
         {value}

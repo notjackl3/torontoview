@@ -10,6 +10,7 @@ import * as THREE from "three";
 import { Building } from "./buildingData";
 import { CityProjection } from "./projection";
 import { getRepresentativeSourceDb, dbAtDistanceMeters } from "./constructionNoise";
+import type { BuildMode } from "./buildMode";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -214,8 +215,18 @@ export function analyzeStakeholderImpact(
   placedWidth: number,
   osmBuildings: Building[],
   radius: ImpactRadius = 250,
+  buildMode: BuildMode = "new-build",
 ): StakeholderAnalysis {
   const impacts: BuildingImpactResult[] = [];
+
+  // Noise from a fit-out is order-of-magnitude smaller than from new
+  // construction: indoor demo and finishing work, mostly during the day, and
+  // no heavy equipment. Scale the modelled noise field accordingly. Shadow
+  // and view impacts are massing-driven, so when we're moving into an
+  // existing building (no new massing) we suppress them entirely — the
+  // surrounding context already sees the building that's there today.
+  const noiseScale = buildMode === "move-in" ? 0.15 : 1.0;
+  const massingActive = buildMode !== "move-in";
 
   for (const building of osmBuildings) {
     if (building.footprint.length < 3) continue;
@@ -225,9 +236,13 @@ export function analyzeStakeholderImpact(
 
     if (dist > radius) continue;
 
-    const shadow = calculateShadowImpact(placedHeight, building.height, dist);
-    const noise = calculateNoiseImpact(dist, placedHeight);
-    const view = calculateViewObstruction(placedHeight, placedWidth, dist, building.height);
+    const shadow = massingActive
+      ? calculateShadowImpact(placedHeight, building.height, dist)
+      : 0;
+    const noise = calculateNoiseImpact(dist, placedHeight) * noiseScale;
+    const view = massingActive
+      ? calculateViewObstruction(placedHeight, placedWidth, dist, building.height)
+      : 0;
     const score = computeOverallScore(shadow, noise, view);
 
     impacts.push({

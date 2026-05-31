@@ -32,17 +32,17 @@ export function StepStaffing() {
         subtitle="Roles you'll hire on day one. Ontario minimum wage is currently $17.20/hr (2025)."
       />
 
-      <div className="rounded-md border border-white/10 overflow-hidden">
-        <div className="grid grid-cols-[1fr_80px_90px_90px_36px] gap-2 bg-white/5 px-3 py-2 text-[9px] font-bold uppercase tracking-tight text-zinc-400">
+      <div className="rounded-md border border-[#003F7C]/12 overflow-hidden">
+        <div className="grid grid-cols-[1fr_80px_90px_90px_36px] gap-2 bg-white px-3 py-2 text-[9px] font-bold uppercase tracking-tight text-slate-600">
           <span>Role</span>
           <span className="text-right">Headcount</span>
           <span className="text-right">$/hour</span>
           <span className="text-center">FT/PT</span>
           <span />
         </div>
-        <div className="divide-y divide-white/5">
+        <div className="divide-y divide-[#003F7C]/8">
           {roles.length === 0 && (
-            <p className="px-3 py-6 text-center text-xs text-zinc-500">
+            <p className="px-3 py-6 text-center text-xs text-slate-500">
               No roles defined. Add your first one below.
             </p>
           )}
@@ -78,8 +78,8 @@ export function StepStaffing() {
                 onClick={() => updateRole(role.id, { fullTime: !role.fullTime })}
                 className={`rounded px-2 py-1 text-[9px] font-bold uppercase tracking-tight ${
                   role.fullTime
-                    ? "bg-blue-500/20 text-blue-200 border border-blue-400/30"
-                    : "bg-white/5 text-zinc-400 border border-white/10"
+                    ? "bg-[#003F7C] text-white border border-[#003F7C]"
+                    : "bg-white text-slate-600 border border-[#003F7C]/12"
                 }`}
               >
                 {role.fullTime ? "Full-time" : "Part-time"}
@@ -87,7 +87,7 @@ export function StepStaffing() {
               <button
                 type="button"
                 onClick={() => setRoles(roles.filter((r) => r.id !== role.id))}
-                className="flex items-center justify-center rounded-md text-zinc-500 hover:bg-rose-500/15 hover:text-rose-400 transition-colors"
+                className="flex items-center justify-center rounded-md text-slate-500 hover:bg-rose-50 hover:text-rose-600 transition-colors"
               >
                 <Trash2 size={14} />
               </button>
@@ -99,7 +99,7 @@ export function StepStaffing() {
       <button
         type="button"
         onClick={() => setRoles([...roles, newRole()])}
-        className="mt-3 flex items-center gap-1.5 rounded-md border border-dashed border-white/15 px-3 py-2 text-[11px] font-bold uppercase tracking-tight text-zinc-300 hover:border-blue-400/40 hover:text-blue-200 transition-colors"
+        className="mt-3 flex items-center gap-1.5 rounded-md border border-dashed border-[#003F7C]/15 px-3 py-2 text-[11px] font-bold uppercase tracking-tight text-slate-700 hover:border-[#003F7C]/40 hover:text-[#003F7C] transition-colors"
       >
         <Plus size={13} />
         Add role

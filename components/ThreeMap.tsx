@@ -7,6 +7,11 @@ import * as THREE from "three";
 import * as turf from "@turf/turf";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+
+// Enable three.js's built-in FileLoader cache so repeated fetches of the
+// same model URL reuse the ArrayBuffer instead of re-downloading. Safe: the
+// cache just memoizes already-fetched bytes.
+THREE.Cache.enabled = true;
 import { OutlinePass } from "three/examples/jsm/postprocessing/OutlinePass.js";
 import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
@@ -31,9 +36,10 @@ import {
 // Rendering systems
 import { fetchBuildings } from "@/lib/buildingData";
 import { renderBuildings } from "@/lib/buildingRenderer";
-import { renderRoads, renderTrafficHeatmap, renderCongestionMarkers, renderBarricadeMarkers } from "@/lib/roadRenderer";
+import { renderRoads, renderTrafficHeatmap, renderCongestionMarkers, renderBarricadeMarkers, updateRoadColors, renderTrafficDensityLayer, updateTrafficDensityLayer } from "@/lib/roadRenderer";
 import {
   applyGroundImagery,
+  applyThemeToEnvironment,
   createCelestialBodies,
   createGround,
   createSky,
@@ -55,6 +61,7 @@ import {
   attachKeyboardControls,
   updateKeyboardMovement,
   flyToStreetLevel,
+  flyToBuildingView,
   exitStreetLevel,
   isInStreetMode,
   updateStreetWalkMovement,
@@ -136,8 +143,13 @@ interface ThreeMapProps {
       worldY: number;
       worldZ: number;
       ghostRotationY?: number; // Current rotation of ghost preview
+      existingBuildingId?: string; // Set when the click hit an existing OSM building in move-in mode
     } | null,
   ) => void;
+  /** When true, clicks on existing OSM buildings count as placement picks (move-in mode) */
+  selectExistingMode?: boolean;
+  /** Highlight empty/buildable ground during the placement stage */
+  highlightBuildable?: boolean;
   placedBuildings?: PlacedBuilding[];
   isPlacementMode?: boolean;
   buildingScale?: { x: number; y: number; z: number };
@@ -154,6 +166,8 @@ interface ThreeMapProps {
   showWaterLayer?: boolean;
   /** Show Toronto street-trees (instanced trunk + foliage per tree) */
   showTorontoTreesLayer?: boolean;
+  /** Show road traffic density heatmap (green→red, driven by timeOfDayHour) */
+  showTrafficDensityLayer?: boolean;
   /** Show wind effect visualization overlay */
   showWindLayer?: boolean;
   /** Hourly wind data from Open-Meteo for time-of-day scrubbing */
@@ -211,6 +225,49 @@ interface ThreeMapProps {
   onBarricadeToggle?: (edgeId: string) => void;
   /** When true, mouse movement shows a street-view pin preview; click triggers street view */
   isStreetViewSelectionMode?: boolean;
+  /** When true, clicking an OSM building picks it for interior building view */
+  isBuildingViewSelectionMode?: boolean;
+  /** Called when the user clicks a building in building-view selection mode */
+  onBuildingViewPick?: (info: {
+    buildingId: string;
+    hitWorldX: number;
+    hitWorldZ: number;
+  }) => void;
+  /** When set, fly the camera into this building view target */
+  buildingViewTarget?: {
+    worldX: number;
+    worldZ: number;
+    floorHeightM: number;
+    facingDeg: number;
+    footprintRadiusM: number;
+    id: number;
+  } | null;
+  /** Hide the floating HUD that appears under a selected OSM building (the
+   *  green "Add business plan" + red Delete buttons). Set true during the
+   *  move-in pipeline so the user picks via the dedicated banner instead. */
+  hideExistingBuildingHud?: boolean;
+  /** When set, the analysis stage is locked to this OSM building cluster:
+   *  - that cluster is persistently highlighted in gold,
+   *  - clicks on other OSM buildings are ignored so the selection can't drift. */
+  analysisLockedBuildingId?: string | null;
+  /** Competitor pins to drop on the map (from CompetitorPanel). Empty array
+   *  or undefined removes them. `analyzed` flips the pin from red (default)
+   *  to green so the user can see at a glance which spots already have a
+   *  cached AI competitor analysis. */
+  competitorMarkers?: Array<{
+    name: string;
+    lat: number;
+    lng: number;
+    analyzed?: boolean;
+  }>;
+  /** Fires with the index of the competitor marker the user clicked on plus
+   *  the on-screen pixel position of the pin (canvas-relative) so the
+   *  consumer can anchor a popup right next to it. */
+  onCompetitorPinClick?: (
+    markerIndex: number,
+    screenX: number,
+    screenY: number,
+  ) => void;
   /** Map base style: satellite imagery or light/street map */
   mapStyle?: "satellite" | "light";
 }
@@ -532,6 +589,8 @@ export default function ThreeMap({
   onCoordinateClick,
   placedBuildings = [],
   isPlacementMode = false,
+  selectExistingMode = false,
+  highlightBuildable = false,
   buildingScale = { x: 10, y: 10, z: 10 },
   selectedBuildingId = null,
   onBuildingSelect,
@@ -543,6 +602,7 @@ export default function ThreeMap({
   showParksLayer = false,
   showWaterLayer = false,
   showTorontoTreesLayer = true,
+  showTrafficDensityLayer = false,
   showWindLayer = false,
   windData = null,
   zoningOffset = { x: 0, z: 0 },
@@ -571,6 +631,13 @@ export default function ThreeMap({
   barricadedEdgeIds,
   onBarricadeToggle,
   isStreetViewSelectionMode = false,
+  isBuildingViewSelectionMode = false,
+  onBuildingViewPick,
+  buildingViewTarget,
+  hideExistingBuildingHud = false,
+  analysisLockedBuildingId = null,
+  competitorMarkers,
+  onCompetitorPinClick,
   mapStyle = "satellite",
 }: ThreeMapProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -586,9 +653,14 @@ export default function ThreeMap({
   const sunMeshRef = useRef<THREE.Mesh | null>(null);
   const moonMeshRef = useRef<THREE.Mesh | null>(null);
   const groundGroupRef = useRef<THREE.Group | null>(null);
+  const buildableOverlayRef = useRef<THREE.Mesh | null>(null);
   const groundImageryBboxRef = useRef<[number, number, number, number] | null>(
     null,
   );
+  // Mirror of the mapStyle prop so the long-lived init effect (which captures
+  // its initial value) can be retargeted by post-init useEffects without
+  // rerunning. Kept in sync with the prop just below.
+  const mapStyleRef = useRef<"satellite" | "light">(mapStyle);
   const timeOfDayHourRef = useRef<number>(12);
   const dayOfYearRef = useRef<number>(80);
   // Saved bird-eye state so exit street view can return to exact pre-entry position
@@ -644,6 +716,7 @@ export default function ThreeMap({
   const parksGroupRef = useRef<THREE.Group | null>(null);
   const waterGroupRef = useRef<THREE.Group | null>(null);
   const torontoTreesGroupRef = useRef<THREE.Group | null>(null);
+  const trafficDensityGroupRef = useRef<THREE.Group | null>(null);
   const windVizRef = useRef<WindVisualization | null>(null);
   const buildingsDataRef = useRef<import("@/lib/buildingData").Building[]>([]);
   const windFieldsRef = useRef<WindCell[][] | null>(null);
@@ -795,16 +868,29 @@ export default function ThreeMap({
   }, [showTrafficHeatmap, trafficImpactResult, barricadedEdgeIds, isReady]);
 
   // Apply a static map texture to the ground plane when a basemap source is
-  // available. The neutral plane remains the fallback if texture loading fails.
+  // available, retint the sky/ground palette, and recolor roads in place. The
+  // neutral plane remains the fallback if texture loading fails. Roads are
+  // recolored cheaply rather than re-rendered so toggling style is instant.
   useEffect(() => {
+    mapStyleRef.current = mapStyle;
+
+    const scene = sceneRef.current;
     const groundGroup = groundGroupRef.current;
+    const sky = skyMeshRef.current;
     const bbox = groundImageryBboxRef.current;
+    if (scene) {
+      applyThemeToEnvironment(scene, groundGroup, sky, mapStyle);
+    }
+    if (groupsRef.current?.staticGeometry) {
+      updateRoadColors(groupsRef.current.staticGeometry, mapStyle);
+    }
+
     if (!groundGroup || !bbox) return;
 
     let cancelled = false;
     applyGroundImagery(groundGroup, bbox, mapStyle).then((applied) => {
       if (!cancelled && applied) {
-        console.log(`Applied ${mapStyle} basemap texture`);
+        console.log(`Applied ${mapStyle} basemap`);
       }
     });
 
@@ -813,17 +899,28 @@ export default function ThreeMap({
     };
   }, [mapStyle]);
 
-  // Fly to target location when prop changes
+  // Toggle the buildable-ground highlight during placement stage.
+  useEffect(() => {
+    const mesh = buildableOverlayRef.current;
+    if (!mesh) return;
+    mesh.visible = highlightBuildable;
+  }, [highlightBuildable]);
+
+  // Fly to target location when prop changes. During the analysis stage we
+  // pull back to a wider 3/4 oblique view so the user sees the locked
+  // building in context, not as a frame-filling close-up.
   useEffect(() => {
     if (!flyToTarget || !cameraRef.current || !controlsRef.current) return;
+    const isAnalysis = analysisLockedBuildingId != null;
     flyToLocation(
       cameraRef.current,
       controlsRef.current,
       flyToTarget.lngLat,
-      600,
+      isAnalysis ? 450 : 600,
       2000,
+      isAnalysis ? 500 : 100,
     );
-  }, [flyToTarget]);
+  }, [flyToTarget, analysisLockedBuildingId]);
 
   // Street-level POV: fly down when streetViewTarget changes
   useEffect(() => {
@@ -948,6 +1045,27 @@ export default function ThreeMap({
     });
   }, [streetViewTarget]);
 
+  // Interior building view: fly into the chosen building's floor + facing.
+  useEffect(() => {
+    if (!buildingViewTarget || !cameraRef.current || !controlsRef.current)
+      return;
+    savedBirdEyeStateRef.current = {
+      position: cameraRef.current.position.clone(),
+      target: controlsRef.current.target.clone(),
+    };
+    flyToBuildingView(
+      cameraRef.current,
+      controlsRef.current,
+      buildingViewTarget.worldX,
+      buildingViewTarget.worldZ,
+      buildingViewTarget.floorHeightM,
+      buildingViewTarget.facingDeg,
+      buildingViewTarget.footprintRadiusM,
+    ).then(() => {
+      onStreetViewChange?.(true);
+    });
+  }, [buildingViewTarget]);
+
   // Exit street view when trigger increments
   useEffect(() => {
     if (!exitStreetViewTrigger || !cameraRef.current || !controlsRef.current) return;
@@ -1053,7 +1171,7 @@ export default function ThreeMap({
         setLoadingStatus("Setting up environment...");
 
         // Add sky dome
-        const sky = createSky();
+        const sky = createSky(mapStyleRef.current);
         groups.environment.add(sky);
         skyMeshRef.current = sky;
 
@@ -1069,27 +1187,49 @@ export default function ThreeMap({
           43.64, -79.395, 43.66, -79.365,
         ];
 
-        // Extended imagery bbox (~4x in each direction for surrounding city context)
+        // Extended imagery bbox for surrounding city context. Rendered at
+        // uniform brightness — no fade at the 3D-model boundary.
         const latSpan = bbox[2] - bbox[0]; // 0.02
         const lngSpan = bbox[3] - bbox[1]; // 0.03
         const mapBbox: [number, number, number, number] = [
-          bbox[0] - latSpan * 1.5, // south
-          bbox[1] - lngSpan * 1.5, // west
-          bbox[2] + latSpan * 1.5, // north
-          bbox[3] + lngSpan * 1.5, // east
+          bbox[0] - latSpan * 1.5,
+          bbox[1] - lngSpan * 1.5,
+          bbox[2] + latSpan * 1.5,
+          bbox[3] + lngSpan * 1.5,
         ];
         groundImageryBboxRef.current = mapBbox;
 
-        // Single styled ground plane — satellite tile imagery removed in favour
-        // of a clean dark backdrop that lets the building extrusions read.
         setLoadingStatus("Creating ground plane...");
         const groundGroup = createGround(
           { minLat: mapBbox[0], maxLat: mapBbox[2], minLng: mapBbox[1], maxLng: mapBbox[3] },
           CityProjection,
+          {},
+          mapStyleRef.current,
         );
         groups.environment.add(groundGroup);
         groundGroupRef.current = groundGroup;
-        void applyGroundImagery(groundGroup, mapBbox, mapStyle);
+        void applyGroundImagery(groundGroup, mapBbox, mapStyleRef.current);
+
+        // Buildable-ground highlight. Sized to roughly cover the loaded city
+        // bbox; sits slightly above the ground but below building geometry
+        // so OSM buildings/parks/water mask it where the user cannot place.
+        // Frustum-culled when invisible so it adds no per-frame cost off-mode.
+        const overlayGeom = new THREE.PlaneGeometry(4000, 4000);
+        const overlayMat = new THREE.MeshBasicMaterial({
+          color: 0x22c55e,
+          transparent: true,
+          opacity: 0.22,
+          depthWrite: false,
+        });
+        const overlayMesh = new THREE.Mesh(overlayGeom, overlayMat);
+        overlayMesh.rotation.x = -Math.PI / 2;
+        overlayMesh.position.y = 0.3;
+        overlayMesh.renderOrder = 1;
+        overlayMesh.visible = false;
+        overlayMesh.frustumCulled = true;
+        overlayMesh.userData.isBuildableOverlay = true;
+        groups.environment.add(overlayMesh);
+        buildableOverlayRef.current = overlayMesh;
 
         // Fetch and render buildings
         setLoadingStatus("Fetching buildings from OpenStreetMap...");
@@ -1132,7 +1272,7 @@ export default function ThreeMap({
         // Render roads
         setLoadingStatus("Rendering roads...");
         const edges = roadNetwork.getEdges();
-        renderRoads(edges, CityProjection, groups.staticGeometry);
+        renderRoads(edges, CityProjection, groups.staticGeometry, mapStyleRef.current);
 
         // Update static geometry matrix after all additions
         groups.staticGeometry.updateMatrix();
@@ -1478,6 +1618,14 @@ export default function ThreeMap({
             lodManagerRef.current.updateCameraPosition(cameraRef.current);
           }
 
+          // Hide street trees when zoomed far out — at high altitude each tree
+          // is sub-pixel and shows up as moiré speckle along streets. The
+          // user-facing toggle still gates whether the layer exists at all.
+          if (torontoTreesGroupRef.current && cameraRef.current) {
+            const altitude = cameraRef.current.position.y;
+            torontoTreesGroupRef.current.visible = altitude < 2200;
+          }
+
           // Performance monitor - record frame
           if (perfMonitorRef.current) {
             perfMonitorRef.current.recordFrame();
@@ -1749,6 +1897,28 @@ export default function ThreeMap({
           windVizRef.current.update(deltaTime);
         }
 
+        // Drive animated water shader (flowing currents + wave crests + sun
+        // glitter). Push the live sun direction / color from the time-of-day
+        // directional light so the highlights track the actual sunlight.
+        if (waterGroupRef.current) {
+          const sun = directionalLightRef.current;
+          const sunDir = sun
+            ? sun.position.clone().normalize()
+            : null;
+          waterGroupRef.current.traverse((obj) => {
+            if (
+              obj instanceof THREE.Mesh &&
+              obj.userData?.isAnimatedWater &&
+              obj.material instanceof THREE.ShaderMaterial
+            ) {
+              const u = obj.material.uniforms;
+              if (u.uTime) u.uTime.value += deltaTime;
+              if (sunDir && u.uSunDir) (u.uSunDir.value as THREE.Vector3).copy(sunDir);
+              if (sun && u.uSunColor) (u.uSunColor.value as THREE.Color).copy(sun.color);
+            }
+          });
+        }
+
         // Update WASD keyboard movement + orbit controls
         if (isInStreetMode()) {
           updateStreetWalkMovement(cameraRef.current, controlsRef.current, deltaTime);
@@ -1953,6 +2123,23 @@ export default function ThreeMap({
       // Update raycaster with mouse position
       raycasterRef.current.setFromCamera(mouse, cameraRef.current);
 
+      // Competitor pin click — takes priority over building/car hits so the
+      // analysis popup opens even when a pin floats over a tall tower.
+      if (onCompetitorPinClick && competitorPinsRef.current) {
+        const pinHits = raycasterRef.current.intersectObject(
+          competitorPinsRef.current,
+          true,
+        );
+        if (pinHits.length > 0) {
+          let obj: THREE.Object3D | null = pinHits[0].object;
+          while (obj && obj.userData.competitorIndex == null) obj = obj.parent;
+          if (obj && typeof obj.userData.competitorIndex === "number") {
+            onCompetitorPinClick(obj.userData.competitorIndex as number);
+            return;
+          }
+        }
+      }
+
       // Check if we clicked on a car (show details panel)
       const carMeshList = Object.values(carMeshesRef.current);
       if (carMeshList.length > 0) {
@@ -1974,6 +2161,32 @@ export default function ThreeMap({
 
       // Clear car selection when clicking elsewhere
       setSelectedCarId(null);
+
+      // Street view selection wins over all building hits: raycast against
+      // ground/static geometry so a click on the sidewalk still lands even if
+      // a tower is in the line of sight.
+      if (isStreetViewSelectionMode && onCoordinateClick && groupsRef.current) {
+        const groundTargets = [
+          ...groupsRef.current.environment.children,
+          ...groupsRef.current.staticGeometry.children,
+        ];
+        const groundHits = raycasterRef.current.intersectObjects(
+          groundTargets,
+          true,
+        );
+        if (groundHits.length > 0) {
+          const p = groundHits[0].point;
+          const [lng, lat] = CityProjection.unprojectFromWorld(p);
+          onCoordinateClick({
+            lat,
+            lng,
+            worldX: p.x,
+            worldY: p.y,
+            worldZ: p.z,
+          });
+        }
+        return;
+      }
 
       // Check if we clicked on a custom placed building first
       const buildingObjects = Array.from(buildingModelsRef.current.values());
@@ -2010,7 +2223,13 @@ export default function ThreeMap({
         true,
       );
 
-      if (osmBuildingIntersects.length > 0 && !isPlacementMode) {
+      // Analysis stage: the locked building is the only selectable site.
+      // Swallow OSM clicks entirely so the selection can't drift.
+      if (analysisLockedBuildingId) {
+        return;
+      }
+
+      if (osmBuildingIntersects.length > 0 && (!isPlacementMode || selectExistingMode)) {
         // Walk up from the hit mesh to find the building group with userData
         let target: THREE.Object3D | null = osmBuildingIntersects[0].object;
         while (target && !target.userData.isOsmBuilding) {
@@ -2018,10 +2237,38 @@ export default function ThreeMap({
         }
         if (target?.userData.isOsmBuilding && target.userData.buildingId) {
           const buildingId = target.userData.buildingId;
-          // Resolve clicked building → its cluster root ID (touching buildings = one entity)
           const clusterId =
             clusterIndexRef.current?.clusterIdByBuildingId.get(buildingId) ??
             buildingId;
+
+          // Building-view selection mode: hand the click back to the parent
+          // (with the cluster root so a click on a wing picks the whole
+          // structure) and bail before any normal selection logic runs.
+          if (isBuildingViewSelectionMode && onBuildingViewPick) {
+            const hit = osmBuildingIntersects[0].point;
+            onBuildingViewPick({
+              buildingId: clusterId,
+              hitWorldX: hit.x,
+              hitWorldZ: hit.z,
+            });
+            return;
+          }
+
+          if (selectExistingMode && onCoordinateClick) {
+            const hit = osmBuildingIntersects[0].point;
+            const [lng, lat] = CityProjection.unprojectFromWorld(hit);
+            onCoordinateClick({
+              lat,
+              lng,
+              worldX: hit.x,
+              worldY: 0,
+              worldZ: hit.z,
+              existingBuildingId: clusterId,
+            });
+            setSelectedOsmBuildingId(clusterId);
+            return;
+          }
+
           console.log(
             "Clicked OSM building:",
             buildingId,
@@ -2053,6 +2300,11 @@ export default function ThreeMap({
             return;
           }
         }
+      }
+
+      // In move-in mode, the user must click an existing building — ignore ground clicks.
+      if (selectExistingMode) {
+        return;
       }
 
       // For placement mode, check for building collisions first
@@ -2118,7 +2370,7 @@ export default function ThreeMap({
       canvas.addEventListener("click", handleCanvasClick);
       return () => canvas.removeEventListener("click", handleCanvasClick);
     }
-  }, [onCoordinateClick, onBuildingSelect, isPlacementMode, ghostRotationY]);
+  }, [onCoordinateClick, onBuildingSelect, isPlacementMode, ghostRotationY, selectExistingMode, analysisLockedBuildingId, isStreetViewSelectionMode, isBuildingViewSelectionMode, onBuildingViewPick]);
 
   // Refresh car details panel periodically when a car is selected (live speed/behavior)
   useEffect(() => {
@@ -2753,7 +3005,7 @@ export default function ThreeMap({
     }
 
     let cancelled = false;
-    loadAndRenderZoningLayer(bbox, CityProjection)
+    loadAndRenderZoningLayer(bbox, CityProjection, mapStyle)
       .then((group) => {
         if (!group) return;
         if (cancelled) {
@@ -2775,7 +3027,7 @@ export default function ThreeMap({
         zoningGroupRef.current = null;
       }
     };
-  }, [showZoningLayer, isReady]);
+  }, [showZoningLayer, isReady, mapStyle]);
 
   // Apply zoning offset and rotation when they change
   useEffect(() => {
@@ -2817,7 +3069,7 @@ export default function ThreeMap({
       return;
     }
     let cancelled = false;
-    loadAndRenderParksLayer()
+    loadAndRenderParksLayer(mapStyle)
       .then((group) => {
         if (!group) return;
         if (cancelled) {
@@ -2835,7 +3087,7 @@ export default function ThreeMap({
         parksGroupRef.current = null;
       }
     };
-  }, [showParksLayer, isReady]);
+  }, [showParksLayer, isReady, mapStyle]);
 
   // Toronto water layer (Lake Ontario shoreline + inland waterbodies + creeks)
   useEffect(() => {
@@ -2848,7 +3100,7 @@ export default function ThreeMap({
       return;
     }
     let cancelled = false;
-    loadAndRenderWaterLayer()
+    loadAndRenderWaterLayer(mapStyle)
       .then((group) => {
         if (!group) return;
         if (cancelled) {
@@ -2866,7 +3118,7 @@ export default function ThreeMap({
         waterGroupRef.current = null;
       }
     };
-  }, [showWaterLayer, isReady]);
+  }, [showWaterLayer, isReady, mapStyle]);
 
   // Toronto street trees layer (instanced trunk + foliage)
   useEffect(() => {
@@ -2898,6 +3150,46 @@ export default function ThreeMap({
       }
     };
   }, [showTorontoTreesLayer, isReady]);
+
+  // Road Traffic density heatmap — synthetic 24-hour curve over every road,
+  // driven by the time-of-day slider. Built once when toggled on, then
+  // re-colored cheaply in a separate effect whenever the hour changes.
+  useEffect(() => {
+    if (!groupsRef.current || !isReady) return;
+    if (!showTrafficDensityLayer || !roadNetworkRef.current) {
+      if (trafficDensityGroupRef.current) {
+        removeLayerGroup(trafficDensityGroupRef.current);
+        trafficDensityGroupRef.current = null;
+      }
+      return;
+    }
+    const edges = roadNetworkRef.current.getEdges();
+    const group = renderTrafficDensityLayer(
+      edges,
+      CityProjection,
+      timeOfDayHour ?? 12,
+      mapStyleRef.current,
+    );
+    trafficDensityGroupRef.current = group;
+    groupsRef.current.dynamicObjects.add(group);
+    return () => {
+      if (trafficDensityGroupRef.current) {
+        removeLayerGroup(trafficDensityGroupRef.current);
+        trafficDensityGroupRef.current = null;
+      }
+    };
+  }, [showTrafficDensityLayer, isReady]);
+
+  // Re-tint the traffic density layer as the user scrubs the time slider.
+  // Geometry is preserved; only colors + opacity change so this is cheap.
+  useEffect(() => {
+    if (!trafficDensityGroupRef.current || !roadNetworkRef.current) return;
+    updateTrafficDensityLayer(
+      trafficDensityGroupRef.current,
+      roadNetworkRef.current.getEdges(),
+      timeOfDayHour ?? 12,
+    );
+  }, [timeOfDayHour, showTrafficDensityLayer]);
 
   // Wind effect visualization layer
   useEffect(() => {
@@ -3026,6 +3318,252 @@ export default function ThreeMap({
     };
   }, [isBarricadeMode]);
 
+  // Move-in / building-view modes: highlight whole building cluster on hover
+  // so the user sees exactly which structure they're about to pick.
+  useEffect(() => {
+    if ((!selectExistingMode && !isBuildingViewSelectionMode) || !canvasRef.current) return;
+    const canvas = canvasRef.current;
+    canvas.style.cursor = "pointer";
+
+    // Saved emissive per mesh in the currently-highlighted cluster so we can
+    // restore when the cursor leaves.
+    let highlightedClusterId: string | null = null;
+    const saved = new Map<THREE.Mesh, THREE.Color>();
+
+    const restore = () => {
+      for (const [mesh, color] of saved) {
+        const mat = mesh.material as THREE.MeshStandardMaterial;
+        if (mat.emissive) mat.emissive.copy(color);
+      }
+      saved.clear();
+      highlightedClusterId = null;
+    };
+
+    const highlight = (clusterId: string) => {
+      if (highlightedClusterId === clusterId) return;
+      restore();
+      const idx = clusterIndexRef.current;
+      const memberIds = idx?.clusterById.get(clusterId)?.buildingIds ?? [
+        clusterId,
+      ];
+      for (const id of memberIds) {
+        const group = osmBuildingMeshesRef.current.get(id);
+        if (!group) continue;
+        group.traverse((child) => {
+          if (!(child instanceof THREE.Mesh)) return;
+          const mat = child.material as THREE.MeshStandardMaterial;
+          if (!mat?.emissive) return;
+          if (!saved.has(child)) saved.set(child, mat.emissive.clone());
+          // Warm gold so the highlight reads clearly on both white walls and
+          // dark glass; emissive (not albedo) keeps the building's own colour.
+          mat.emissive.set(0xffaa33);
+        });
+      }
+      highlightedClusterId = clusterId;
+    };
+
+    const handleMouseMove = (event: MouseEvent) => {
+      if (!canvasRef.current || !cameraRef.current) return;
+      const rect = canvasRef.current.getBoundingClientRect();
+      const mouse = new THREE.Vector2(
+        ((event.clientX - rect.left) / rect.width) * 2 - 1,
+        -((event.clientY - rect.top) / rect.height) * 2 + 1,
+      );
+      raycasterRef.current.setFromCamera(mouse, cameraRef.current);
+
+      const hits = raycasterRef.current.intersectObjects(
+        Array.from(osmBuildingMeshesRef.current.values()),
+        true,
+      );
+      if (hits.length === 0) {
+        restore();
+        return;
+      }
+      let target: THREE.Object3D | null = hits[0].object;
+      while (target && !target.userData.isOsmBuilding) target = target.parent;
+      const buildingId = target?.userData.buildingId as string | undefined;
+      if (!buildingId) {
+        restore();
+        return;
+      }
+      const clusterId =
+        clusterIndexRef.current?.clusterIdByBuildingId.get(buildingId) ??
+        buildingId;
+      highlight(clusterId);
+    };
+
+    canvas.addEventListener("mousemove", handleMouseMove);
+    return () => {
+      canvas.removeEventListener("mousemove", handleMouseMove);
+      canvas.style.cursor = "";
+      restore();
+    };
+  }, [selectExistingMode, isBuildingViewSelectionMode]);
+
+  // Analysis stage: permanently highlight the locked building so the user can
+  // see which site the panels are running against. We re-apply on the next
+  // animation frame after meshes load to handle the async building load.
+  useEffect(() => {
+    if (!analysisLockedBuildingId) return;
+    const saved = new Map<THREE.Mesh, THREE.Color>();
+    let raf = 0;
+
+    const apply = () => {
+      const idx = clusterIndexRef.current;
+      const memberIds = idx?.clusterById.get(analysisLockedBuildingId)
+        ?.buildingIds ?? [analysisLockedBuildingId];
+      let appliedAny = false;
+      for (const id of memberIds) {
+        const group = osmBuildingMeshesRef.current.get(id);
+        if (!group) continue;
+        appliedAny = true;
+        group.traverse((child) => {
+          if (!(child instanceof THREE.Mesh)) return;
+          const mat = child.material as THREE.MeshStandardMaterial;
+          if (!mat?.emissive) return;
+          if (!saved.has(child)) saved.set(child, mat.emissive.clone());
+          mat.emissive.set(0x22c55e);
+        });
+      }
+      // Buildings load asynchronously; if nothing matched yet, retry next frame.
+      if (!appliedAny) raf = requestAnimationFrame(apply);
+    };
+    raf = requestAnimationFrame(apply);
+
+    return () => {
+      cancelAnimationFrame(raf);
+      for (const [mesh, color] of saved) {
+        const mat = mesh.material as THREE.MeshStandardMaterial;
+        if (mat?.emissive) mat.emissive.copy(color);
+      }
+    };
+  }, [analysisLockedBuildingId]);
+
+  // Competitor pins: drop an indigo inverted-cone above each competitor's
+  // lat/lng. One InstancedMesh per refresh so 50+ pins still cost one draw
+  // call. Cleared when the list goes empty (panel closed) or unmount.
+  const competitorPinsRef = useRef<THREE.Group | null>(null);
+  useEffect(() => {
+    if (!groupsRef.current) return;
+
+    if (competitorPinsRef.current) {
+      groupsRef.current.dynamicObjects.remove(competitorPinsRef.current);
+      competitorPinsRef.current.traverse((child) => {
+        if ((child as THREE.Mesh).geometry)
+          (child as THREE.Mesh).geometry.dispose();
+        const mat = (child as THREE.Mesh).material;
+        if (mat) {
+          if (Array.isArray(mat)) mat.forEach((m) => m.dispose());
+          else (mat as THREE.Material).dispose();
+        }
+      });
+      competitorPinsRef.current = null;
+    }
+
+    if (!competitorMarkers || competitorMarkers.length === 0) return;
+
+    const group = new THREE.Group();
+    group.name = "competitorPins";
+    // Tag the group so the click handler can pick this hit category. Marking
+    // it explicitly is cheaper than walking up to compare against a ref.
+    group.userData.isCompetitorPinGroup = true;
+
+    // Big glowing sphere — reads as a "spot" planted at street level rather
+    // than a pin floating in the sky. Sits a hair off the ground so it
+    // doesn't z-fight the road surface but the user still feels it's on top
+    // of the location.
+    const SCALE = 10 / 1.4; // world units / metre
+    const SPOT_RADIUS_M = 9; // ~3× the old pin so it's clearly visible
+    const FLOAT_Y_M = 6; // just above road centerline / strip overlays
+
+    // One shared geometry; per-instance materials so each spot can be
+    // recolored independently.
+    const spotGeo = new THREE.SphereGeometry(SPOT_RADIUS_M, 18, 12);
+    // Halo ring sits flat on the ground and glows out — gives the sphere a
+    // grounded "spotlight" feel from any camera angle.
+    const haloGeo = new THREE.RingGeometry(
+      SPOT_RADIUS_M * 1.2,
+      SPOT_RADIUS_M * 2.0,
+      32,
+    );
+
+    // Red = unanalyzed (default), green = analysis cached locally.
+    const PALETTE = {
+      unanalyzed: {
+        body: 0xef4444,
+        bodyEmissive: 0xdc2626,
+        halo: 0xff6b6b,
+      },
+      analyzed: {
+        body: 0x22c55e,
+        bodyEmissive: 0x16a34a,
+        halo: 0x86efac,
+      },
+    };
+
+    for (let i = 0; i < competitorMarkers.length; i++) {
+      const marker = competitorMarkers[i];
+      const world = CityProjection.projectToWorld([marker.lng, marker.lat]);
+      const palette = marker.analyzed ? PALETTE.analyzed : PALETTE.unanalyzed;
+
+      const bodyMat = new THREE.MeshStandardMaterial({
+        color: palette.body,
+        emissive: palette.bodyEmissive,
+        emissiveIntensity: 0.75,
+        roughness: 0.35,
+        metalness: 0.1,
+        transparent: true,
+        opacity: 0.92,
+      });
+      const haloMat = new THREE.MeshBasicMaterial({
+        color: palette.halo,
+        transparent: true,
+        opacity: 0.45,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+      });
+
+      const body = new THREE.Mesh(spotGeo, bodyMat);
+      body.scale.setScalar(SCALE);
+      body.position.set(world.x, (FLOAT_Y_M + SPOT_RADIUS_M) * SCALE, world.z);
+
+      const halo = new THREE.Mesh(haloGeo, haloMat);
+      halo.rotation.x = -Math.PI / 2;
+      halo.position.set(world.x, 1.2 * SCALE, world.z);
+      halo.scale.setScalar(SCALE);
+      halo.renderOrder = 12;
+
+      // Tag both meshes so a raycast picks the right marker index regardless
+      // of which sub-mesh the ray actually hit.
+      body.userData.isCompetitorPin = true;
+      body.userData.competitorIndex = i;
+      halo.userData.isCompetitorPin = true;
+      halo.userData.competitorIndex = i;
+
+      group.add(body);
+      group.add(halo);
+    }
+
+    groupsRef.current.dynamicObjects.add(group);
+    competitorPinsRef.current = group;
+
+    return () => {
+      if (competitorPinsRef.current && groupsRef.current) {
+        groupsRef.current.dynamicObjects.remove(competitorPinsRef.current);
+        competitorPinsRef.current.traverse((child) => {
+          if ((child as THREE.Mesh).geometry)
+            (child as THREE.Mesh).geometry.dispose();
+          const mat = (child as THREE.Mesh).material;
+          if (mat) {
+            if (Array.isArray(mat)) mat.forEach((mm) => mm.dispose());
+            else (mat as THREE.Material).dispose();
+          }
+        });
+        competitorPinsRef.current = null;
+      }
+    };
+  }, [competitorMarkers]);
+
   // Update ghost position on mouse move
   useEffect(() => {
     if (!isPlacementMode) return;
@@ -3135,6 +3673,8 @@ export default function ThreeMap({
     streetViewPinRef.current = pin;
     groupsRef.current.dynamicObjects.add(pin);
 
+    if (canvasRef.current) canvasRef.current.style.cursor = "crosshair";
+
     function handleMouseMove(event: MouseEvent) {
       if (!canvasRef.current || !cameraRef.current || !groupsRef.current || !streetViewPinRef.current) return;
       const rect = canvasRef.current.getBoundingClientRect();
@@ -3161,6 +3701,7 @@ export default function ThreeMap({
     canvas?.addEventListener("mousemove", handleMouseMove);
     return () => {
       canvas?.removeEventListener("mousemove", handleMouseMove);
+      if (canvas) canvas.style.cursor = "";
       if (streetViewPinRef.current && groupsRef.current) {
         groupsRef.current.dynamicObjects.remove(streetViewPinRef.current);
         streetViewPinRef.current = null;
@@ -3388,7 +3929,7 @@ export default function ThreeMap({
       )}
 
       {/* Selected OSM Building — business plan + delete */}
-      {selectedOsmBuildingId && (
+      {selectedOsmBuildingId && !hideExistingBuildingHud && (
         <div className="absolute bottom-24 left-1/2 transform -translate-x-1/2 z-20 flex gap-3">
           <button
             onClick={() => openOsmBusinessPlan(selectedOsmBuildingId)}
@@ -3408,7 +3949,6 @@ export default function ThreeMap({
               );
               const ids = cluster?.buildingIds ?? [selectedOsmBuildingId];
               for (let i = 0; i < ids.length; i++) {
-                // skip API call on all but the last so we hit it once if needed
                 deleteOsmBuilding(ids[i], i < ids.length - 1);
               }
               setSelectedOsmBuildingId(null);

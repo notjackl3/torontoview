@@ -8,7 +8,13 @@ function money(n: number) {
   return `$${Math.round(n).toLocaleString()}`;
 }
 
-export function StepReview({ onSubmit }: { onSubmit: () => void }) {
+export function StepReview({
+  onSubmit,
+  onSubmitMock,
+}: {
+  onSubmit: () => void;
+  onSubmitMock?: () => void;
+}) {
   const { plan } = usePlan();
   const m = computePlanMetrics(plan);
   const profit = m.monthlyNet >= 0;
@@ -66,8 +72,8 @@ export function StepReview({ onSubmit }: { onSubmit: () => void }) {
           {m.monthlyLoanPayment > 0 && (
             <Row label="Loan payment" value={`− ${money(m.monthlyLoanPayment)}`} />
           )}
-          <div className="mt-2 flex items-center justify-between border-t border-white/10 pt-2">
-            <span className="text-[10px] font-bold uppercase tracking-tight text-zinc-400">
+          <div className="mt-2 flex items-center justify-between border-t border-[#003F7C]/12 pt-2">
+            <span className="text-[10px] font-bold uppercase tracking-tight text-slate-600">
               Net monthly
             </span>
             <span
@@ -84,13 +90,28 @@ export function StepReview({ onSubmit }: { onSubmit: () => void }) {
         <button
           type="button"
           onClick={onSubmit}
-          className="w-full rounded-md bg-blue-600 px-4 py-3 text-sm font-bold uppercase tracking-tight text-white hover:bg-blue-500 transition-colors"
+          className="w-full rounded-md bg-[#003F7C] px-4 py-3 text-sm font-bold uppercase tracking-tight text-white hover:brightness-110 transition-colors"
         >
           Submit to committee
         </button>
-        <p className="text-center text-[10px] text-zinc-500">
+        <p className="text-center text-[10px] text-slate-500">
           The committee of specialist agents will review and return suggestions, revenue projections, and risk flags.
         </p>
+
+        {onSubmitMock && (
+          <>
+            <button
+              type="button"
+              onClick={onSubmitMock}
+              className="w-full rounded-md border border-amber-400/60 bg-amber-50 px-4 py-3 text-sm font-bold uppercase tracking-tight text-amber-800 hover:bg-amber-100 transition-colors"
+            >
+              Submit mock · skip to map analysis
+            </button>
+            <p className="text-center text-[10px] text-slate-500">
+              Dev shortcut — bypasses the agent committee and jumps straight to the on-map business analysis with the plan already loaded.
+            </p>
+          </>
+        )}
       </div>
     </div>
   );
@@ -98,8 +119,8 @@ export function StepReview({ onSubmit }: { onSubmit: () => void }) {
 
 function Card({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <section className="rounded-md border border-white/10 bg-white/5 p-4">
-      <h3 className="mb-2 text-[10px] font-bold uppercase tracking-tight text-zinc-400">
+    <section className="rounded-md border border-[#003F7C]/12 bg-white p-4">
+      <h3 className="mb-2 text-[10px] font-bold uppercase tracking-tight text-slate-600">
         {title}
       </h3>
       <div className="space-y-1">{children}</div>
@@ -110,8 +131,8 @@ function Card({ title, children }: { title: string; children: React.ReactNode })
 function Row({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-center justify-between text-xs">
-      <span className="text-zinc-400">{label}</span>
-      <span className="font-mono text-zinc-100">{value}</span>
+      <span className="text-slate-600">{label}</span>
+      <span className="font-mono text-slate-900">{value}</span>
     </div>
   );
 }

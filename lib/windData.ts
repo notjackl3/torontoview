@@ -40,7 +40,7 @@ export async function fetchWindData(date?: string): Promise<WindDataSet> {
   const today = date ?? new Date().toISOString().slice(0, 10);
   try {
     let url =
-      "https://api.open-meteo.com/v1/forecast?latitude=44.2253&longitude=-76.4951&hourly=wind_speed_10m,wind_direction_10m&timezone=America/Toronto";
+      "https://api.open-meteo.com/v1/forecast?latitude=43.6532&longitude=-79.3832&hourly=wind_speed_10m,wind_direction_10m&timezone=America/Toronto";
     if (date) {
       url += `&start_date=${date}&end_date=${date}`;
     }

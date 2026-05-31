@@ -156,28 +156,28 @@ export function VoiceDesign() {
   const micBgClass = (() => {
     switch (phase) {
       case 'listening':
-        return 'bg-blue-500 text-white';
+        return 'bg-[#003F7C] text-white';
       case 'designing':
         return 'bg-amber-500 text-white';
       case 'error':
-        return 'bg-red-500/20 text-red-400';
+        return 'bg-red-100 text-red-700';
       default:
-        return 'bg-white/10 text-zinc-400 hover:bg-violet-500 hover:text-white';
+        return 'bg-[#003F7C]/8 text-[#003F7C] hover:bg-violet-600 hover:text-white';
     }
   })();
 
   return (
-    <div className="fixed bottom-40 right-17 z-50 flex flex-col items-end gap-2">
+    <div className="fixed bottom-24 right-8 z-50 flex flex-col items-end gap-2">
       {/* Popover: Last Voice Command details */}
       {lastResult && showDetails && (
-        <div className="w-80 glass rounded-2xl shadow-xl p-4 space-y-3 animate-in fade-in slide-in-from-bottom-2">
+        <div className="w-80 bg-white/95 backdrop-blur-xl border border-[#003F7C]/15 rounded-2xl shadow-[0_18px_50px_-18px_rgba(0,63,124,0.35)] p-4 space-y-3 animate-in fade-in slide-in-from-bottom-2">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">
+            <span className="text-[10px] font-black uppercase tracking-wide text-slate-500">
               Last Voice Command
             </span>
             <button
               onClick={() => setShowDetails(false)}
-              className="text-zinc-500 hover:text-zinc-300 transition-colors"
+              className="text-slate-500 hover:text-slate-900 transition-colors"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
@@ -185,13 +185,13 @@ export function VoiceDesign() {
             </button>
           </div>
           <div>
-            <p className="text-xs font-medium text-zinc-500 mb-1">Transcript</p>
-            <p className="text-sm text-zinc-200">&ldquo;{lastResult.transcript}&rdquo;</p>
+            <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500 mb-1">Transcript</p>
+            <p className="text-sm text-slate-800">&ldquo;{lastResult.transcript}&rdquo;</p>
           </div>
           {lastResult.config && (
             <div>
-              <p className="text-xs font-medium text-zinc-500 mb-1">Parsed Config</p>
-              <pre className="text-[11px] bg-white/5 rounded-lg p-2.5 overflow-x-auto text-zinc-300 leading-relaxed max-h-48 overflow-y-auto">
+              <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500 mb-1">Parsed Config</p>
+              <pre className="text-[11px] bg-[#003F7C]/5 rounded-lg p-2.5 overflow-x-auto text-slate-700 leading-relaxed max-h-48 overflow-y-auto">
                 {JSON.stringify(lastResult.config, null, 2)}
               </pre>
             </div>
@@ -200,11 +200,11 @@ export function VoiceDesign() {
       )}
 
       {/* Floating Input Island */}
-      <div className="flex items-center gap-2 glass rounded-full shadow-lg pl-4 pr-1.5 py-1.5">
+      <div className="flex items-center gap-2 bg-white/95 backdrop-blur-xl border border-[#003F7C]/15 rounded-full shadow-[0_18px_45px_-20px_rgba(0,63,124,0.35)] pl-4 pr-1.5 py-1.5">
         {/* Text / Status area */}
         <span
           className={`text-sm select-none min-w-[160px] ${
-            phase === 'error' ? 'text-red-400' : 'text-zinc-400'
+            phase === 'error' ? 'text-red-600' : 'text-slate-500'
           }`}
         >
           {lastResult && phase === 'idle'
@@ -218,8 +218,8 @@ export function VoiceDesign() {
             onClick={() => setShowDetails(!showDetails)}
             className={`w-9 h-9 rounded-full flex items-center justify-center transition-all duration-200 ${
               showDetails
-                ? 'bg-violet-500/20 text-violet-400'
-                : 'bg-white/10 text-zinc-400 hover:bg-white/15 hover:text-zinc-300'
+                ? 'bg-violet-100 text-violet-700'
+                : 'bg-[#003F7C]/8 text-[#003F7C] hover:bg-[#003F7C]/15'
             }`}
             title="Show details"
           >

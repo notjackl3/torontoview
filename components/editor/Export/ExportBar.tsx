@@ -2,51 +2,19 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import * as THREE from 'three';
 import { useBuildings } from '@/lib/editor/contexts/BuildingsContext';
-import { exportMultiBuildingsToGLB, exportMultiBuildingsToJSON, copyMultiBuildingsToClipboard, exportToMap } from '@/lib/editor/utils/exportUtils';
+import { exportToMap } from '@/lib/editor/utils/exportUtils';
 
 interface ExportBarProps {
   sceneRef: React.MutableRefObject<THREE.Scene | null>;
+  /** When provided, the map redirect carries `mode=...` so the guided
+   *  placement pipeline (new-build / demolish-rebuild) re-engages. */
+  pipelineMode?: string | null;
 }
 
-export function ExportBar({ sceneRef }: ExportBarProps) {
+export function ExportBar({ sceneRef, pipelineMode = null }: ExportBarProps) {
   const { buildings } = useBuildings();
   const router = useRouter();
-  const [exporting, setExporting] = useState(false);
   const [exportingToMap, setExportingToMap] = useState(false);
-  const [copied, setCopied] = useState(false);
-
-  const handleExportGLB = async () => {
-    if (!sceneRef.current) {
-      alert('Scene not ready for export');
-      return;
-    }
-
-    setExporting(true);
-    try {
-      await exportMultiBuildingsToGLB(sceneRef.current);
-      alert(`Successfully exported ${buildings.length} building${buildings.length > 1 ? 's' : ''} as GLB!`);
-    } catch (error) {
-      console.error('Export failed:', error);
-      alert('Failed to export GLB. Check console for details.');
-    } finally {
-      setExporting(false);
-    }
-  };
-
-  const handleExportJSON = () => {
-    exportMultiBuildingsToJSON(buildings);
-  };
-
-  const handleCopyJSON = async () => {
-    try {
-      await copyMultiBuildingsToClipboard(buildings);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch (error) {
-      console.error('Copy failed:', error);
-      alert('Failed to copy to clipboard');
-    }
-  };
 
   const handleExportToMap = async () => {
     if (!sceneRef.current) {
@@ -62,8 +30,9 @@ export function ExportBar({ sceneRef }: ExportBarProps) {
     setExportingToMap(true);
     try {
       const { id } = await exportToMap(sceneRef.current, 'custom-building');
-      // Navigate to map with the building ID
-      router.push(`/map?buildingId=${id}`);
+      const params = new URLSearchParams({ buildingId: id });
+      if (pipelineMode) params.set('mode', pipelineMode);
+      router.push(`/map?${params.toString()}`);
     } catch (error) {
       console.error('Export to map failed:', error);
       alert('Failed to export to map. Check console for details.');
@@ -71,21 +40,34 @@ export function ExportBar({ sceneRef }: ExportBarProps) {
     }
   };
 
+  const ctaLabel = pipelineMode
+    ? exportingToMap
+      ? 'Sending to map…'
+      : 'Place on Map →'
+    : exportingToMap
+      ? 'Exporting…'
+      : 'Export to Map →';
+
   return (
-    <div className="w-full glass text-white px-6 py-4 border-t border-white/10 flex items-center justify-between">
-      <div className="text-sm">
-        <span className="font-semibold">Export Options</span>
-        <span className="ml-3 text-zinc-500">
-          {buildings.length} building{buildings.length > 1 ? 's' : ''}
+    <div className="w-full px-6 py-3 border-t border-[#003F7C]/12 bg-white/80 backdrop-blur-xl flex items-center justify-between shadow-[0_-4px_18px_-12px_rgba(0,63,124,0.2)]">
+      <div className="text-sm text-slate-700">
+        <span className="font-black tracking-tight text-slate-900">Export</span>
+        <span className="ml-3 text-slate-500">
+          {buildings.length} building{buildings.length === 1 ? '' : 's'}
         </span>
+        {pipelineMode && (
+          <span className="ml-3 px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-tight bg-[#003F7C]/10 text-[#003F7C]">
+            {pipelineMode} pipeline
+          </span>
+        )}
       </div>
 
       <button
         onClick={handleExportToMap}
-        disabled={exportingToMap}
-        className="px-5 py-2.5 rounded-full font-medium text-sm border-2 bg-indigo-600 border-indigo-500 text-white hover:bg-indigo-500 hover:border-indigo-400 hover:shadow-[0_8px_25px_-5px_rgba(99,102,241,0.5)] hover:-translate-y-0.5 active:translate-y-0 disabled:bg-zinc-800 disabled:border-zinc-700 disabled:text-zinc-500 disabled:cursor-not-allowed disabled:hover:translate-y-0 disabled:hover:shadow-none transition-all duration-200 ease-out"
+        disabled={exportingToMap || buildings.length === 0}
+        className="px-5 py-2.5 rounded-full font-black text-xs uppercase tracking-tight bg-[#003F7C] text-white hover:brightness-110 hover:-translate-y-0.5 active:translate-y-0 disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed disabled:hover:translate-y-0 shadow-[0_8px_22px_-10px_rgba(0,63,124,0.55)] transition-all duration-200 ease-out"
       >
-        {exportingToMap ? 'Exporting...' : 'Export to Map →'}
+        {ctaLabel}
       </button>
     </div>
   );

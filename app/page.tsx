@@ -83,8 +83,8 @@ export default function Landing() {
           </p>
 
           <div className="lp-econ-actions">
-            <Link href="/map" className="lp-econ-primary">
-              Open economic map
+            <Link href="/start" className="lp-econ-primary">
+              Open a business in Toronto
               <ArrowRight size={17} />
             </Link>
             <Link href="/plan/business-1" className="lp-econ-secondary">
@@ -160,8 +160,8 @@ export default function Landing() {
             inspect access, parking, traffic, public realm, and nearby economic
             context before presenting the opportunity.
           </p>
-          <Link href="/map" className="lp-econ-inline">
-            Start from the live map
+          <Link href="/start" className="lp-econ-inline">
+            Start the guided flow
             <ArrowRight size={16} />
           </Link>
         </div>

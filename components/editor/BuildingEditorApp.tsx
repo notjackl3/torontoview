@@ -9,23 +9,39 @@ import { Scene } from '@/components/editor/Viewport/Scene';
 import { ExportBar } from '@/components/editor/Export/ExportBar';
 import { VoiceDesign } from '@/components/editor/InputPanel/VoiceDesign';
 
-export default function BuildingEditorApp() {
+interface BuildingEditorAppProps {
+  /** Pipeline mode forwarded from /start (?mode=new-build|demolish-rebuild|move-in).
+   *  When set, the export flow returns the user to /map with the same mode so
+   *  guided placement re-engages with their custom-designed building. */
+  pipelineMode?: string | null;
+}
+
+export default function BuildingEditorApp({ pipelineMode = null }: BuildingEditorAppProps) {
   const sceneRef = useRef<THREE.Scene | null>(null);
+
+  const backHref = pipelineMode ? `/start` : '/';
+  const backLabel = pipelineMode ? '← Back to pipeline' : '← Back to Campus Map';
 
   return (
     <BuildingsProvider>
-      <div className="flex flex-col h-screen w-screen overflow-hidden bg-[#222222]">
+      <div className="flex flex-col h-screen w-screen overflow-hidden bg-gradient-to-b from-[#f5f8fc] via-[#eef3fa] to-[#e8f0fc] text-slate-900">
         {/* Header */}
-        <header className="glass z-10 px-4 py-3 flex items-center justify-between border-b border-white/10">
+        <header className="z-10 px-6 py-3 flex items-center justify-between border-b border-[#003F7C]/12 bg-white/70 backdrop-blur-xl shadow-[0_4px_18px_-12px_rgba(0,63,124,0.25)]">
           <div>
-            <h1 className="text-xl font-bold text-zinc-100">3D Building Editor</h1>
-            <p className="text-xs text-zinc-500">Create and customize 3D buildings</p>
+            <h1 className="text-xl font-black tracking-tight text-slate-900">
+              3D Building Editor
+            </h1>
+            <p className="text-xs text-slate-500">
+              {pipelineMode
+                ? `Designing for the ${pipelineMode.replace('-', ' ')} pipeline · export sends it back to the map`
+                : 'Create and customize 3D buildings'}
+            </p>
           </div>
           <Link
-            href="/"
-            className="px-5 py-2.5 rounded-full font-medium text-sm border-2 bg-white/5 border-white/10 text-zinc-300 hover:bg-white/10 hover:border-white/20 hover:text-white hover:shadow-[0_8px_25px_-5px_rgba(255,255,255,0.08)] hover:-translate-y-0.5 active:translate-y-0 transition-all duration-200 ease-out"
+            href={backHref}
+            className="px-5 py-2.5 rounded-full font-bold text-xs uppercase tracking-tight border border-[#003F7C]/15 bg-white/80 text-[#003F7C] hover:bg-[#003F7C] hover:text-white hover:border-[#003F7C] transition-colors duration-200"
           >
-            ← Back to Campus Map
+            {backLabel}
           </Link>
         </header>
 
@@ -43,7 +59,7 @@ export default function BuildingEditorApp() {
         </div>
 
         {/* Export Bar - Bottom */}
-        <ExportBar sceneRef={sceneRef} />
+        <ExportBar sceneRef={sceneRef} pipelineMode={pipelineMode} />
       </div>
 
       {/* Voice Design - Floating Bottom Left */}

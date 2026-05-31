@@ -484,6 +484,77 @@ export function applyCategoryDefaults(
   };
 }
 
+export function vietnameseCafeMockPlan(id: string, buildingId?: string): BusinessPlan {
+  const stamp = Date.now();
+  return {
+    id,
+    buildingId,
+    updatedAt: stamp,
+    concept: {
+      name: "Phở & Filter",
+      category: "cafe",
+      valueProp:
+        "Hanoi-style phin drip and bánh mì in a sunlit corner café — slow coffee, fast lunch, soft jazz.",
+      targetAgeMin: 22,
+      targetAgeMax: 45,
+      targetIncomeTier: "$$",
+      chain: false,
+    },
+    products: [
+      { id: `${stamp}-p1`, name: "Cà phê sữa đá (iced)", price: 5.5, cogsPct: 20, dailyVolume: 130 },
+      { id: `${stamp}-p2`, name: "Phin drip coffee", price: 4.25, cogsPct: 18, dailyVolume: 70 },
+      { id: `${stamp}-p3`, name: "Coconut coffee", price: 6.75, cogsPct: 24, dailyVolume: 60 },
+      { id: `${stamp}-p4`, name: "Bánh mì", price: 11, cogsPct: 35, dailyVolume: 85 },
+      { id: `${stamp}-p5`, name: "Gỏi cuốn (spring rolls)", price: 8.5, cogsPct: 30, dailyVolume: 45 },
+      { id: `${stamp}-p6`, name: "Pandan waffle", price: 5.75, cogsPct: 28, dailyVolume: 40 },
+    ],
+    operations: {
+      hours: {
+        mon: { open: true, start: "07:00", end: "19:00" },
+        tue: { open: true, start: "07:00", end: "19:00" },
+        wed: { open: true, start: "07:00", end: "19:00" },
+        thu: { open: true, start: "07:00", end: "20:00" },
+        fri: { open: true, start: "07:00", end: "20:00" },
+        sat: { open: true, start: "08:00", end: "20:00" },
+        sun: { open: true, start: "08:00", end: "17:00" },
+      },
+      serviceModel: "counter",
+      customerAreaSqft: 950,
+      backOfHouseSqft: 350,
+      seatingCapacity: 24,
+      peakTurnRate: 30,
+      alcoholLicense: false,
+      liveEntertainment: false,
+    },
+    staffing: {
+      roles: [
+        { id: `${stamp}-r1`, title: "Owner / manager", headcount: 1, hourlyWage: 32, fullTime: true },
+        { id: `${stamp}-r2`, title: "Barista", headcount: 2, hourlyWage: 18, fullTime: false },
+        { id: `${stamp}-r3`, title: "Bánh mì cook", headcount: 1, hourlyWage: 21, fullTime: true },
+        { id: `${stamp}-r4`, title: "Counter / prep", headcount: 2, hourlyWage: 17.2, fullTime: false },
+      ],
+      founderDraw: 4500,
+      benefitsPct: 15,
+    },
+    financials: {
+      capitalOwn: 80000,
+      capitalLoan: 120000,
+      capitalGrants: 5000,
+      loanRatePct: 7.5,
+      loanTermMonths: 60,
+      rent: 6200,
+      utilities: 900,
+      insurance: 380,
+      softwarePos: 280,
+      accounting: 420,
+      other: 600,
+      marketingTier: "medium",
+      inventoryFloat: 18000,
+      breakEvenMonth: 14,
+    },
+  };
+}
+
 export const WEEKDAYS: { key: keyof BusinessPlan["operations"]["hours"]; label: string }[] = [
   { key: "mon", label: "Mon" },
   { key: "tue", label: "Tue" },

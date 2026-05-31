@@ -107,17 +107,17 @@ export function DimensionsForm({ spec, onUpdate, buildingId }: DimensionsFormPro
   const maxFloors = hasBuildingAbove ? Math.max(1, Math.floor(maxHeight / spec.floorHeight)) : 20;
   const maxFloorHeight = hasBuildingAbove ? Math.max(2.5, maxHeight / spec.numberOfFloors) : 6;
 
-  const sliderClass = "flex-4 h-2 bg-white/10 rounded-full appearance-none cursor-pointer accent-blue-500 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-blue-500 [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-blue-400 [&::-webkit-slider-thumb]:cursor-grab [&::-webkit-slider-thumb]:active:cursor-grabbing";
-  const inputClass = "flex-1 px-3 py-2 border border-white/10 bg-white/5 rounded-lg text-sm text-center text-zinc-200 focus:border-blue-400 focus:outline-none transition-colors duration-200";
+  const sliderClass = "flex-4 h-2 bg-slate-100 rounded-full appearance-none cursor-pointer accent-blue-500 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-blue-500 [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-blue-400 [&::-webkit-slider-thumb]:cursor-grab [&::-webkit-slider-thumb]:active:cursor-grabbing";
+  const inputClass = "flex-1 px-3 py-2 border border-slate-200 bg-slate-50 rounded-lg text-sm text-center text-slate-800 focus:border-[#003F7C] focus:outline-none transition-colors duration-200";
 
   return (
     <div className="space-y-6">
-      <h3 className="text-xl font-bold text-zinc-100 mb-2">Dimensions</h3>
+      <h3 className="text-xl font-bold text-slate-900 mb-2">Dimensions</h3>
 
       <div className="space-y-2">
-        <label className="block text-sm font-semibold text-zinc-400">
+        <label className="block text-sm font-semibold text-slate-600">
           Width (meters): <span className="text-blue-400">{spec.width}</span>
-          {maxWidth < 50 && <span className="text-zinc-500 text-xs ml-2">(max: {maxWidth.toFixed(1)}m)</span>}
+          {maxWidth < 50 && <span className="text-slate-500 text-xs ml-2">(max: {maxWidth.toFixed(1)}m)</span>}
         </label>
         <div className="flex items-center gap-3">
           <input type="range" min="5" max={maxWidth} step="0.5" value={Math.min(spec.width, maxWidth)}
@@ -129,9 +129,9 @@ export function DimensionsForm({ spec, onUpdate, buildingId }: DimensionsFormPro
       </div>
 
       <div className="space-y-2">
-        <label className="block text-sm font-semibold text-zinc-400">
+        <label className="block text-sm font-semibold text-slate-600">
           Depth (meters): <span className="text-blue-400">{spec.depth}</span>
-          {maxDepth < 50 && <span className="text-zinc-500 text-xs ml-2">(max: {maxDepth.toFixed(1)}m)</span>}
+          {maxDepth < 50 && <span className="text-slate-500 text-xs ml-2">(max: {maxDepth.toFixed(1)}m)</span>}
         </label>
         <div className="flex items-center gap-3">
           <input type="range" min="5" max={maxDepth} step="0.5" value={Math.min(spec.depth, maxDepth)}
@@ -143,9 +143,9 @@ export function DimensionsForm({ spec, onUpdate, buildingId }: DimensionsFormPro
       </div>
 
       <div className="space-y-2">
-        <label className="block text-sm font-semibold text-zinc-400">
+        <label className="block text-sm font-semibold text-slate-600">
           Number of Floors: <span className="text-blue-400">{spec.numberOfFloors}</span>
-          {hasBuildingAbove && maxFloors < 20 && <span className="text-zinc-500 text-xs ml-2">(max: {maxFloors})</span>}
+          {hasBuildingAbove && maxFloors < 20 && <span className="text-slate-500 text-xs ml-2">(max: {maxFloors})</span>}
         </label>
         <div className="flex items-center gap-3">
           <input type="range" min="1" max={maxFloors} step="1" value={Math.min(spec.numberOfFloors, maxFloors)}
@@ -157,9 +157,9 @@ export function DimensionsForm({ spec, onUpdate, buildingId }: DimensionsFormPro
       </div>
 
       <div className="space-y-2">
-        <label className="block text-sm font-semibold text-zinc-400">
+        <label className="block text-sm font-semibold text-slate-600">
           Floor Height (meters): <span className="text-blue-400">{spec.floorHeight}</span>
-          {hasBuildingAbove && maxFloorHeight < 6 && <span className="text-zinc-500 text-xs ml-2">(max: {maxFloorHeight.toFixed(1)}m)</span>}
+          {hasBuildingAbove && maxFloorHeight < 6 && <span className="text-slate-500 text-xs ml-2">(max: {maxFloorHeight.toFixed(1)}m)</span>}
         </label>
         <div className="flex items-center gap-3">
           <input type="range" min="2.5" max={maxFloorHeight} step="0.1" value={Math.min(spec.floorHeight, maxFloorHeight)}
@@ -170,9 +170,9 @@ export function DimensionsForm({ spec, onUpdate, buildingId }: DimensionsFormPro
         </div>
       </div>
 
-      <div className="pt-4 mt-6 border-t border-white/10">
-        <p className="text-sm text-zinc-400 bg-white/5 px-4 py-3 rounded-lg border border-white/10">
-          Total Height: <span className="font-bold text-zinc-200">{(spec.numberOfFloors * spec.floorHeight).toFixed(1)}m</span>
+      <div className="pt-4 mt-6 border-t border-slate-200">
+        <p className="text-sm text-slate-600 bg-slate-50 px-4 py-3 rounded-lg border border-slate-200">
+          Total Height: <span className="font-bold text-slate-800">{(spec.numberOfFloors * spec.floorHeight).toFixed(1)}m</span>
         </p>
       </div>
     </div>

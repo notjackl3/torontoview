@@ -9,6 +9,7 @@ import * as turf from "@turf/turf";
 import { RoadNetwork, RoadEdge, RoadNode } from "./roadNetwork";
 import { Pathfinder } from "./pathfinding";
 import { TorontoZoneCode } from "./torontoZoning";
+import type { BuildMode } from "./buildMode";
 
 // ─── ITE Trip Generation Rates ───────────────────────────────────────────────
 
@@ -114,6 +115,19 @@ export interface TrafficImpactResult {
   congestedIntersections: string[];
   /** Maximum radius (meters) used for trip distribution / gradient rendering */
   maxImpactRadius: number;
+  /**
+   * Construction-phase trip overlay — only populated for buildings in
+   * new-build / demolish-rebuild mode. These are temporary (last for the
+   * construction duration), not part of the long-run operational trip
+   * generation, so we report them separately so the panel can show both
+   * "during construction" and "after opening" numbers.
+   */
+  construction: {
+    workerTripsPerDay: number;
+    truckTripsPerDay: number;
+    /** Buildings contributing to the construction overlay. */
+    activeSites: number;
+  };
 }
 
 export interface EdgeImpact {
@@ -298,6 +312,9 @@ export function analyzeTrafficImpact(
     position: [number, number]; // [lng, lat]
     zoneCode: string;
     scale: { x: number; y: number; z: number };
+    /** How the user is taking this site. Controls whether we add a
+     *  construction-phase trip overlay. Defaults to "new-build". */
+    buildMode?: BuildMode;
   }>,
   roadNetwork: RoadNetwork,
   options?: {
@@ -309,13 +326,37 @@ export function analyzeTrafficImpact(
   const mapboxCongestion = options?.mapboxCongestion;
   const IMPACT_RADIUS = 800;
 
-  // 1. Generate trips for each building
+  // 1. Generate trips for each building. We always compute operational trips
+  // — those are the long-run weekday volume the new use will generate.
   const tripGenerations: BuildingTripGeneration[] = buildings.map((b) =>
     generateTrips(b.id, b.zoneCode, b.position, b.scale),
   );
 
   const totalDailyTrips = tripGenerations.reduce((s, t) => s + t.dailyTrips, 0);
   const totalPeakHourTrips = tripGenerations.reduce((s, t) => s + t.peakHourTrips, 0);
+
+  // 1b. Construction-phase overlay — applies only when the user is doing
+  // ground-up or demolish-rebuild work. Rule of thumb (CTRE/FHWA construction
+  // traffic guides): ~6 worker round-trips per 1,000 ft² and ~2 truck
+  // round-trips per 1,000 ft² across the construction window.
+  const SQM_TO_KSQFT = 10.764 / 1000;
+  let workerTripsPerDay = 0;
+  let truckTripsPerDay = 0;
+  let constructionSites = 0;
+  buildings.forEach((b, i) => {
+    const mode = b.buildMode ?? "new-build";
+    if (mode === "move-in") return;
+    const gen = tripGenerations[i];
+    // Re-derive floor area from the same scale math used in estimateUnits.
+    const S = 10 / 1.4;
+    const footprintM2 = (b.scale.x * 5 / S) * (b.scale.z * 5 / S);
+    const floors = Math.max(1, Math.round(b.scale.y * 5 / S / 3.5));
+    const ksqft = footprintM2 * floors * SQM_TO_KSQFT;
+    workerTripsPerDay += Math.round(6 * ksqft);
+    truckTripsPerDay += Math.round(2 * ksqft);
+    void gen;
+    constructionSites += 1;
+  });
 
   // 2. Distribute trips to road edges (collecting distances)
   const edgeTrips = new Map<string, number>();
@@ -405,6 +446,11 @@ export function analyzeTrafficImpact(
     edgeImpact,
     congestedIntersections,
     maxImpactRadius: IMPACT_RADIUS,
+    construction: {
+      workerTripsPerDay,
+      truckTripsPerDay,
+      activeSites: constructionSites,
+    },
   };
 }
 

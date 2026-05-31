@@ -1,9 +1,16 @@
 @import "tailwindcss";
 
 body {
-  font-family: "Archivo", sans-serif;
+  font-family: var(--font-archivo), "Archivo", system-ui, -apple-system, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+button,
+input,
+select,
+textarea {
+  font-family: inherit;
 }
 
 @layer components {
@@ -1032,33 +1039,50 @@ h3,
   font-family: "Lora", serif;
 }
 
-/* Glass morphism effect — dark translucent glass */
+/* ───────────────────────────────────────────────────────────
+   Civic Instrument — light frosted glass with cool blue tint
+   ─────────────────────────────────────────────────────────── */
+
+/* Outer floating panel: high-opacity ice-tinted glass so the basemap can't bleed through */
 .glass {
-  background: rgba(24, 24, 27, 0.6);
-  @apply backdrop-blur-xl;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background:
+    linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.96) 0%,
+      rgba(240, 246, 254, 0.94) 100%
+    );
+  backdrop-filter: blur(24px) saturate(160%);
+  -webkit-backdrop-filter: blur(24px) saturate(160%);
+  border: 1px solid rgba(0, 63, 124, 0.14);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.95),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.5),
+    0 1px 2px rgba(0, 63, 124, 0.04),
+    0 10px 30px -12px rgba(0, 63, 124, 0.18),
+    0 28px 60px -20px rgba(0, 63, 124, 0.22);
 }
 
-/* Lighter glass variant for nested cards / form sections */
+/* Nested card / form section — translucent ice-blue tile */
 .glass-inner {
-  background: rgba(255, 255, 255, 0.05);
+  background: linear-gradient(
+    180deg,
+    rgba(232, 240, 252, 0.55) 0%,
+    rgba(232, 240, 252, 0.25) 100%
+  );
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
-  border: 1px solid rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(0, 63, 124, 0.1);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
 }
 
-/* Map gradient overlay */
+/* Map vignette — gone. Bright basemap should read at full luminance. */
 .map-gradient {
-  background: radial-gradient(
-    circle at center,
-    transparent 0%,
-    rgba(0, 0, 0, 0.15) 100%
-  );
+  background: none;
 }
 
-/* Custom scrollbar for dark glass theme */
+/* Brand-tinted scrollbar */
 .custom-scrollbar::-webkit-scrollbar {
-  width: 4px;
+  width: 6px;
 }
 
 .custom-scrollbar::-webkit-scrollbar-track {
@@ -1066,12 +1090,15 @@ h3,
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.15);
-  border-radius: 4px;
+  background: rgba(0, 63, 124, 0.18);
+  border-radius: 999px;
+  border: 1px solid transparent;
+  background-clip: padding-box;
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.25);
+  background: rgba(0, 63, 124, 0.35);
+  background-clip: padding-box;
 }
 
 /* Sidebar transition */
@@ -1079,11 +1106,226 @@ h3,
   transition: all 0.2s ease-in-out;
 }
 
-/* UI Label utility class */
+/* UI Label — small all-caps slate-blue eyebrow */
 .ui-label {
   font-size: 10px;
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: rgba(255, 255, 255, 0.5);
+  letter-spacing: 0.08em;
+  color: rgba(30, 58, 95, 0.62);
+}
+
+/* Section divider — hair-thin tinted rule */
+.civic-rule {
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(0, 63, 124, 0.18) 22%,
+    rgba(0, 63, 124, 0.18) 78%,
+    transparent 100%
+  );
+}
+
+/* Layer-row card: flat, ice-tinted, with crisp hover */
+.civic-row {
+  background: rgba(255, 255, 255, 0.55);
+  border: 1px solid rgba(0, 63, 124, 0.08);
+  transition: background 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
+}
+
+.civic-row:hover {
+  background: rgba(232, 240, 252, 0.7);
+  border-color: rgba(0, 63, 124, 0.18);
+}
+
+.civic-row[data-active="true"] {
+  background: linear-gradient(
+    180deg,
+    rgba(0, 63, 124, 0.08) 0%,
+    rgba(0, 63, 124, 0.04) 100%
+  );
+  border-color: rgba(0, 63, 124, 0.28);
+  box-shadow: inset 0 0 0 1px rgba(0, 63, 124, 0.05);
+}
+
+/* ───────────────────────────────────────────────────────────
+   Segmented control — high-contrast pill toggle. Active pill is
+   ink-on-light navy with white text; inactive is slate-on-ice
+   with hover that brightens without nuking text contrast.
+   ─────────────────────────────────────────────────────────── */
+.segctrl {
+  display: flex;
+  padding: 3px;
+  background: rgba(0, 63, 124, 0.05);
+  border: 1px solid rgba(0, 63, 124, 0.1);
+  border-radius: 10px;
+  gap: 2px;
+}
+
+.segctrl-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 7px 10px;
+  border-radius: 7px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #475569; /* slate-600 — legible on ice glass */
+  background: transparent;
+  transition:
+    background-color 160ms ease,
+    color 160ms ease,
+    box-shadow 200ms ease;
+  cursor: pointer;
+}
+
+.segctrl-btn:hover {
+  color: #1e293b; /* slate-800 */
+  background: rgba(255, 255, 255, 0.65);
+}
+
+.segctrl-btn[data-active="true"] {
+  color: #ffffff;
+  background: linear-gradient(180deg, #0a4f95 0%, #003F7C 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    0 1px 2px rgba(0, 63, 124, 0.25),
+    0 4px 12px -4px rgba(0, 63, 124, 0.45);
+}
+
+.segctrl-btn[data-active="true"]:hover {
+  color: #ffffff;
+  background: linear-gradient(180deg, #0b5aa6 0%, #054b91 100%);
+}
+
+/* ───────────────────────────────────────────────────────────
+   Primary / secondary action pill — full-width CTA used for
+   sidebar actions. Same visual language as segctrl[active].
+   ─────────────────────────────────────────────────────────── */
+.civic-cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #ffffff;
+  background: linear-gradient(180deg, #0a4f95 0%, #003F7C 100%);
+  border: 1px solid rgba(0, 63, 124, 0.4);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    0 4px 14px -6px rgba(0, 63, 124, 0.45);
+  transition: filter 160ms ease, transform 160ms ease;
+  cursor: pointer;
+}
+
+.civic-cta:hover {
+  filter: brightness(1.08);
+}
+
+.civic-cta:active {
+  transform: translateY(1px);
+}
+
+.civic-cta-ghost {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #1e3a5f;
+  background: rgba(255, 255, 255, 0.65);
+  border: 1px solid rgba(0, 63, 124, 0.18);
+  transition: background 160ms ease, border-color 160ms ease;
+  cursor: pointer;
+}
+
+.civic-cta-ghost:hover {
+  background: rgba(232, 240, 252, 0.85);
+  border-color: rgba(0, 63, 124, 0.32);
+}
+
+/* Time-of-day preset chip — icon stack, square-ish, accent-blue when active */
+.tod-preset {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 8px 4px;
+  border-radius: 8px;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #475569; /* slate-600 */
+  background: rgba(255, 255, 255, 0.6);
+  border: 1px solid rgba(0, 63, 124, 0.08);
+  transition:
+    background-color 160ms ease,
+    color 160ms ease,
+    border-color 160ms ease,
+    box-shadow 200ms ease;
+  cursor: pointer;
+}
+
+.tod-preset:hover {
+  color: #1e293b;
+  background: rgba(232, 240, 252, 0.85);
+  border-color: rgba(0, 63, 124, 0.16);
+}
+
+.tod-preset[data-active="true"] {
+  color: #ffffff;
+  background: linear-gradient(180deg, #0a4f95 0%, #003F7C 100%);
+  border-color: rgba(0, 63, 124, 0.6);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    0 4px 12px -4px rgba(0, 63, 124, 0.45);
+}
+
+.tod-preset[data-active="true"]:hover {
+  filter: brightness(1.06);
+}
+
+/* Brand-tinted range slider track */
+.civic-range {
+  appearance: none;
+  width: 100%;
+  height: 6px;
+  border-radius: 999px;
+  background: linear-gradient(
+    90deg,
+    rgba(0, 63, 124, 0.22),
+    rgba(0, 63, 124, 0.08)
+  );
+  outline: none;
+}
+
+.civic-range::-webkit-slider-thumb {
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  background: #ffffff;
+  border: 2px solid #003F7C;
+  box-shadow: 0 2px 6px rgba(0, 63, 124, 0.3);
+  cursor: grab;
+}
+
+.civic-range::-webkit-slider-thumb:active {
+  cursor: grabbing;
 }

@@ -1,169 +1,79 @@
 /**
- * Toronto Official Plan - Land Use Designation layer
- * Fetches zoning polygons from ArcGIS MapServer and renders them in Three.js
+ * Toronto Zoning By-law layer (open.toronto.ca).
  *
- * ArcGIS layer 17: Land Use Designation (Official Plan Schedule 3ABC)
- * Source: City of Toronto - https://utility.arcgis.com/.../OfficialPlan/MapServer
+ * Data source: City of Toronto Open Data — package "zoning-by-law",
+ * resource "Zoning Area - 4326.geojson". Pre-filtered to the downtown bbox
+ * and written to public/map-data/zoning.json by scripts/import-toronto-layers.ts
+ * (the zoning task — fed by the canonical CKAN GeoJSON download).
+ *
+ * Each polygon carries its ZN_ZONE (specific by-law code, e.g. "CR", "R")
+ * and GEN_ZONE (1–6 category). We color by GEN_ZONE so the palette stays
+ * coherent across the dozens of suffixed codes.
  */
 
 import * as THREE from "three";
 import { CityProjection } from "./projection";
+import { getTheme, type MapStyle } from "./mapTheme";
 
-const ARCGIS_MAPSERVER_BASE =
-  "https://utility.arcgis.com/usrsvcs/servers/2c6aee2bcf524340a3c60a44b9f124a9/rest/services/Planning/OfficialPlan/MapServer";
-const LAND_USE_LAYER_ID = 17;
+type Ring = number[][];
 
-/** Zone code to hex color - from ArcGIS uniqueValueInfos (Official Plan Schedule 3ABC) */
-const ZONE_COLORS: Record<string, number> = {
-  AGGR: 0xdedeba, // Prime Agricultural
-  AGR: 0xdedeba,
-  AIR: 0x333333, // Airport
-  AC: 0xffaa00, // Arterial Commercial
-  BPI: 0x73b2ff, // Business Park Industrial
-  CBD: 0x9b59b6, // Central Business District (fallback)
-  DC: 0x8e44ad, // District Commercial (fallback)
-  EPA: 0x38a800, // Environmental Protection
-  ER: 0x6e6e6e, // Estate Residential
-  GI: 0x9cdfff, // General Industrial
-  HAM: 0xffd37f, // Hamlet
-  HA: 0x0070ff, // Harbour Area
-  WA: 0x0070ff,
-  I: 0xffbee8, // Institutional
-  MC: 0xff0000, // Main Street Commercial
-  MAR: 0x0084a8, // Marina
-  MR: 0x8b7355, // Mineral Resource (fallback)
-  MU: 0xe60000, // Mixed Use
-  OS: 0xa5f57a, // Open Space
-  RC: 0xf57a7a, // Regional Commercial
-  RES: 0xffff73, // Residential
-  RU: 0xfffade, // Rural Lands
-  RUC: 0xccaa66, // Rural Commercial
-  RUI: 0xccaa66, // Rural Industrial
-  SECP: 0xffffff, // Secondary Plan Area
-  WMI: 0x6b6b6b, // Waste Management (fallback)
+interface ZoneFeature {
+  id: number;
+  code: string; // ZN_ZONE
+  gen: number; // GEN_ZONE category (1–6)
+  polygons: Ring[][]; // MultiPolygon: [polygon[outerRing, hole, …], …]
+}
+
+// GEN_ZONE → color. Categories from the Zoning By-law README:
+//   1 Residential · 2 Commercial-Residential / Mixed Use · 3 Employment
+//   4 Open Space · 5 Institutional · 6 Utility
+const GEN_ZONE_COLORS: Record<number, number> = {
+  1: 0xffff73, // Residential
+  2: 0xe85b3a, // Commercial-Residential / Mixed Use
+  3: 0xb87aa0, // Employment
+  4: 0x6fc66c, // Open Space
+  5: 0xffbee8, // Institutional
+  6: 0x9aa0a6, // Utility
 };
+const DEFAULT_COLOR = 0xcccccc;
 
-const DEFAULT_ZONE_COLOR = 0xcccccc;
-
-function getColorForCode(code: string | null | undefined): number {
-  if (!code) return DEFAULT_ZONE_COLOR;
-  return ZONE_COLORS[String(code).toUpperCase()] ?? DEFAULT_ZONE_COLOR;
+function colorForGen(gen: number): number {
+  return GEN_ZONE_COLORS[gen] ?? DEFAULT_COLOR;
 }
 
-export interface ZoningFeature {
-  type: "Feature";
-  geometry: {
-    type: "Polygon" | "MultiPolygon";
-    coordinates: number[][][] | number[][][][];
-  };
-  properties?: { CODE?: string; [key: string]: unknown };
-}
-
-export interface ZoningGeoJSON {
-  type: "FeatureCollection";
-  features: ZoningFeature[];
-}
-
-/**
- * Fetch Land Use Designation polygons from ArcGIS MapServer
- * Uses bbox to limit the query extent (Toronto area)
- */
-export async function fetchZoningGeoJSON(bbox: {
-  minLat: number;
-  maxLat: number;
-  minLng: number;
-  maxLng: number;
-}): Promise<ZoningGeoJSON> {
-  // ArcGIS Query: geometry as envelope in [minX, minY, maxX, maxY] (lng, lat)
-  const envelope = JSON.stringify({
-    xmin: bbox.minLng,
-    ymin: bbox.minLat,
-    xmax: bbox.maxLng,
-    ymax: bbox.maxLat,
-    spatialReference: { wkid: 4326 },
-  });
-
-  const params = new URLSearchParams({
-    where: "1=1",
-    outFields: "CODE",
-    outSR: "4326",
-    f: "geojson",
-    geometry: envelope,
-    geometryType: "esriGeometryEnvelope",
-    inSR: "4326",
-  });
-
-  const url = `${ARCGIS_MAPSERVER_BASE}/${LAND_USE_LAYER_ID}/query?${params.toString()}`;
-  const response = await fetch(url);
-
-  if (!response.ok) {
-    throw new Error(
-      `ArcGIS query failed: ${response.status} ${response.statusText}`,
-    );
-  }
-
-  return response.json();
-}
-
-/**
- * Convert GeoJSON polygon rings to Three.js Shape
- * Expects coordinates in [lng, lat] (GeoJSON)
- */
-function ringToShape(
-  ring: number[][],
-  projection: typeof CityProjection,
-): THREE.Shape | null {
+function ringToShape(ring: Ring): THREE.Shape | null {
   if (ring.length < 3) return null;
-
-  const points: THREE.Vector2[] = ring.map(([lng, lat]) => {
-    const world = projection.projectToWorld([lng, lat]);
-    // Shape uses XZ plane - Three.js has Y up, so x->x, z->y for Shape
-    return new THREE.Vector2(world.x, world.z);
-  });
-
   const shape = new THREE.Shape();
-  shape.moveTo(points[0].x, points[0].y);
-  for (let i = 1; i < points.length; i++) {
-    shape.lineTo(points[i].x, points[i].y);
+  const p0 = CityProjection.projectToWorld([ring[0][0], ring[0][1]]);
+  shape.moveTo(p0.x, p0.z);
+  for (let i = 1; i < ring.length; i++) {
+    const p = CityProjection.projectToWorld([ring[i][0], ring[i][1]]);
+    shape.lineTo(p.x, p.z);
   }
   shape.closePath();
   return shape;
 }
 
-/**
- * Render zoning polygons as a Three.js group (caller adds to scene)
- */
 export function renderZoningLayer(
-  geoJson: ZoningGeoJSON,
-  projection: typeof CityProjection,
+  features: ZoneFeature[],
+  mapStyle: MapStyle = "satellite",
 ): THREE.Group {
   const group = new THREE.Group();
   group.name = "zoningLayer";
 
-  const HEIGHT_OFFSET = 1.2; // Well above ground to avoid z-fighting at any camera distance
-  const OPACITY = 0.5;
+  const HEIGHT_OFFSET = 1.2; // overlay above ground/parks
+  const OPACITY = getTheme(mapStyle).zoning.opacity;
 
-  for (const feature of geoJson.features) {
-    const geom = feature.geometry;
-    const code = feature.properties?.CODE;
-    const color = getColorForCode(code);
+  for (const feature of features) {
+    const color = colorForGen(feature.gen);
 
-    const exteriorRings: number[][][] = [];
-
-    if (geom.type === "Polygon") {
-      const rings = geom.coordinates as number[][][];
-      if (rings[0]) exteriorRings.push(rings[0]); // exterior ring only
-    } else if (geom.type === "MultiPolygon") {
-      for (const poly of geom.coordinates as number[][][][]) {
-        if (poly[0]) exteriorRings.push(poly[0]); // exterior ring of each part
-      }
-    }
-
-    for (const ring of exteriorRings) {
-      const shape = ringToShape(ring, projection);
+    for (const poly of feature.polygons) {
+      const shape = ringToShape(poly[0]);
       if (!shape) continue;
-
       const geometry = new THREE.ShapeGeometry(shape);
+      // Same convention as parks/water: rotate the geometry (not the mesh)
+      // so the polygon sits flat on the XZ plane without N–S mirroring.
+      geometry.rotateX(Math.PI / 2);
       const material = new THREE.MeshBasicMaterial({
         color,
         transparent: true,
@@ -172,37 +82,42 @@ export function renderZoningLayer(
         depthWrite: false,
         depthTest: false,
       });
-
       const mesh = new THREE.Mesh(geometry, material);
-      mesh.rotation.x = -Math.PI / 2; // Horizontal
       mesh.position.y = HEIGHT_OFFSET;
-      mesh.renderOrder = 9999; // Draw last as overlay - no z-fighting
-      mesh.userData.zoneCode = code;
+      mesh.renderOrder = 9999;
+      mesh.userData.zoneCode = feature.code;
+      mesh.userData.zoneGen = feature.gen;
       mesh.userData.isZoning = true;
-
       group.add(mesh);
     }
   }
 
-  console.log(`✅ Zoning layer: ${geoJson.features.length} polygons rendered`);
+  console.log(`✅ Zoning layer: ${features.length} polygons rendered`);
   return group;
 }
 
 /**
- * Fetch and render the Toronto zoning layer in one call.
- * Returns the group; caller is responsible for adding to scene and cleanup.
+ * Existing call sites pass (bbox, projection) — both are now ignored because
+ * the data is pre-filtered locally. Kept in the signature to avoid touching
+ * ThreeMap callers.
  */
 export async function loadAndRenderZoningLayer(
-  bbox: { minLat: number; maxLat: number; minLng: number; maxLng: number },
-  projection: typeof CityProjection,
+  _bbox?: { minLat: number; maxLat: number; minLng: number; maxLng: number },
+  _projection?: typeof CityProjection,
+  mapStyle: MapStyle = "satellite",
 ): Promise<THREE.Group | null> {
   try {
-    const geoJson = await fetchZoningGeoJSON(bbox);
-    if (!geoJson.features?.length) {
-      console.warn("No zoning features returned from ArcGIS");
+    const res = await fetch("/map-data/zoning.json", { cache: "force-cache" });
+    if (!res.ok) {
+      console.warn("Zoning fetch failed:", res.status);
       return null;
     }
-    return renderZoningLayer(geoJson, projection);
+    const features = (await res.json()) as ZoneFeature[];
+    if (!features.length) {
+      console.warn("Zoning file is empty");
+      return null;
+    }
+    return renderZoningLayer(features, mapStyle);
   } catch (err) {
     console.error("Failed to load zoning layer:", err);
     return null;

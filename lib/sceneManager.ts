@@ -30,7 +30,7 @@ export interface SceneManager {
 export function createSceneManager(canvas: HTMLCanvasElement): SceneManager {
   // Create scene
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0xc8ddf0); // Managed by time-of-day system
+  scene.background = new THREE.Color(0xece7dc); // Managed by time-of-day system
 
   // Create organized groups
   const groups: SceneGroups = {
@@ -53,10 +53,10 @@ export function createSceneManager(canvas: HTMLCanvasElement): SceneManager {
   groups.debug.visible = false;
 
   // Setup lighting
-  const ambientLight = new THREE.AmbientLight(0xc0d0e8, 1);
+  const ambientLight = new THREE.AmbientLight(0xeae8df, 1.55);
   scene.add(ambientLight);
 
-  const directionalLight = new THREE.DirectionalLight(0xfff8f0, 1.8);
+  const directionalLight = new THREE.DirectionalLight(0xfdf6e8, 1.25);
   directionalLight.position.set(500, 800, 300);
   directionalLight.castShadow = true;
 
@@ -75,7 +75,7 @@ export function createSceneManager(canvas: HTMLCanvasElement): SceneManager {
   scene.add(directionalLight);
 
   // Hemisphere light for natural sky/ground color bounce
-  const hemiLight = new THREE.HemisphereLight(0x88aacc, 0x444422, 0.7);
+  const hemiLight = new THREE.HemisphereLight(0xe5e6e0, 0xc0bbac, 1.05);
   scene.add(hemiLight);
 
   // Fog object (density managed by time-of-day system, starts at 0)
@@ -90,14 +90,20 @@ export function createSceneManager(canvas: HTMLCanvasElement): SceneManager {
   );
 
   // Initial position for zoomed out Toronto view
-  camera.position.set(0, 500, 800);
+  camera.position.set(0, 4200, 5600);
   camera.lookAt(0, 0, 0);
 
-  // Setup renderer
+  // Setup renderer. Logarithmic depth buffer is critical here: the scene
+  // spans 0–45 000 world units (sky dome) with a near plane of 1, so the
+  // default linear z-buffer collapses precision near the ground at the
+  // overhead view — roads / parks / centerlines z-fight the ground plane.
+  // Log-depth gives uniform precision across the whole frustum and is
+  // visually free at this scene's geometry density.
   const renderer = new THREE.WebGLRenderer({
     canvas,
     antialias: true,
     alpha: false,
+    logarithmicDepthBuffer: true,
   });
 
   renderer.setSize(canvas.clientWidth, canvas.clientHeight);
@@ -109,7 +115,7 @@ export function createSceneManager(canvas: HTMLCanvasElement): SceneManager {
 
   // Tone mapping for realistic lighting
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 3;
+  renderer.toneMappingExposure = 3.2;
 
   // Enable local clipping for building cross-section timeline
   renderer.localClippingEnabled = true;

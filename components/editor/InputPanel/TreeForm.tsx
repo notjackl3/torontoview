@@ -49,7 +49,7 @@ const QUICK_PROMPTS = [
   { label: 'Canadian', prompt: 'What iconic Canadian native trees would fit this building?' },
 ];
 
-const sliderClass = "w-full h-2 bg-white/10 rounded-full appearance-none cursor-pointer accent-blue-500 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-blue-500 [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-blue-400 [&::-webkit-slider-thumb]:cursor-grab [&::-webkit-slider-thumb]:active:cursor-grabbing";
+const sliderClass = "w-full h-2 bg-slate-100 rounded-full appearance-none cursor-pointer accent-blue-500 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-blue-500 [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-blue-400 [&::-webkit-slider-thumb]:cursor-grab [&::-webkit-slider-thumb]:active:cursor-grabbing";
 
 export function TreeForm({ spec, onUpdate }: TreeFormProps) {
   const treeConfig = spec.treeConfig || DEFAULT_TREE_CONFIG;
@@ -117,8 +117,34 @@ export function TreeForm({ spec, onUpdate }: TreeFormProps) {
 
   return (
     <div className="space-y-6">
-      <h3 className="text-xl font-bold text-zinc-100 mb-2">Landscaping</h3>
-      <p className="text-xs text-zinc-500">Trees from Toronto&apos;s Neighbourhood Tree Planting Program</p>
+      <h3 className="text-xl font-bold text-slate-900 mb-2">Landscaping</h3>
+      <p className="text-xs text-slate-500">Trees from Toronto&apos;s Neighbourhood Tree Planting Program</p>
+
+      {/* Enable toggle */}
+      <button
+        onClick={() => updateTreeConfig({ enabled: !treeConfig.enabled })}
+        className={`w-full px-4 py-3 rounded-xl font-medium text-sm border flex items-center justify-between transition-colors duration-200 ${
+          treeConfig.enabled
+            ? 'bg-[#003F7C] border-[#003F7C] text-white hover:bg-[#002f5e]'
+            : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
+        }`}
+      >
+        <span className="flex items-center gap-2">
+          <span>🌳</span>
+          <span>Trees {treeConfig.enabled ? 'enabled' : 'disabled'}</span>
+        </span>
+        <span
+          className={`relative inline-flex items-center w-9 h-5 rounded-full transition-colors ${
+            treeConfig.enabled ? 'bg-white/30' : 'bg-slate-300'
+          }`}
+        >
+          <span
+            className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${
+              treeConfig.enabled ? 'translate-x-4' : 'translate-x-0.5'
+            }`}
+          />
+        </span>
+      </button>
 
       {/* AI Advisor Button */}
       <button
@@ -152,7 +178,7 @@ export function TreeForm({ spec, onUpdate }: TreeFormProps) {
                 key={qp.label}
                 onClick={() => { setAiQuestion(qp.prompt); askAI(qp.prompt); }}
                 disabled={aiLoading}
-                className="px-2 py-1 text-[10px] bg-white/5 border border-white/10 rounded-full text-zinc-300 hover:bg-white/10 hover:border-white/20 transition-colors disabled:opacity-50"
+                className="px-2 py-1 text-[10px] bg-slate-50 border border-slate-200 rounded-full text-slate-700 hover:bg-slate-100 hover:border-slate-300 transition-colors disabled:opacity-50"
               >
                 {qp.label}
               </button>
@@ -166,7 +192,7 @@ export function TreeForm({ spec, onUpdate }: TreeFormProps) {
               onChange={(e) => setAiQuestion(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleAskQuestion()}
               placeholder="What tree should I plant for this building?"
-              className="flex-1 px-3 py-2 text-sm border border-white/10 bg-white/5 rounded-lg text-zinc-200 placeholder-zinc-600 focus:border-purple-400 focus:outline-none"
+              className="flex-1 px-3 py-2 text-sm border border-slate-200 bg-slate-50 rounded-lg text-slate-800 placeholder-zinc-600 focus:border-purple-400 focus:outline-none"
               disabled={aiLoading}
             />
             <button
@@ -195,10 +221,10 @@ export function TreeForm({ spec, onUpdate }: TreeFormProps) {
 
           {aiResponse && (
             <div className="space-y-3">
-              <div className="bg-white/5 rounded-lg p-3 border border-white/10">
-                <p className="text-sm text-zinc-300">{aiResponse.recommendation.reasoning}</p>
+              <div className="bg-slate-50 rounded-lg p-3 border border-slate-200">
+                <p className="text-sm text-slate-700">{aiResponse.recommendation.reasoning}</p>
               </div>
-              <div className="bg-white/5 rounded-lg p-3 border border-white/10">
+              <div className="bg-slate-50 rounded-lg p-3 border border-slate-200">
                 <p className="text-xs font-semibold text-purple-300 mb-2">Recommended Trees:</p>
                 <div className="flex flex-wrap gap-2">
                   {aiResponse.recommendation.selectedTrees.map((treeId) => (
@@ -208,17 +234,17 @@ export function TreeForm({ spec, onUpdate }: TreeFormProps) {
                   ))}
                 </div>
               </div>
-              <div className="bg-white/5 rounded-lg p-3 border border-white/10">
+              <div className="bg-slate-50 rounded-lg p-3 border border-slate-200">
                 <p className="text-xs font-semibold text-purple-300 mb-2">Suggested Settings:</p>
-                <div className="flex gap-4 text-xs text-zinc-400">
-                  <span>Density: <strong className="text-zinc-200">{aiResponse.recommendation.density}</strong></span>
-                  <span>Radius: <strong className="text-zinc-200">{aiResponse.recommendation.radius}m</strong></span>
+                <div className="flex gap-4 text-xs text-slate-600">
+                  <span>Density: <strong className="text-slate-800">{aiResponse.recommendation.density}</strong></span>
+                  <span>Radius: <strong className="text-slate-800">{aiResponse.recommendation.radius}m</strong></span>
                 </div>
               </div>
               {aiResponse.recommendation.tips.length > 0 && (
-                <div className="bg-white/5 rounded-lg p-3 border border-white/10">
+                <div className="bg-slate-50 rounded-lg p-3 border border-slate-200">
                   <p className="text-xs font-semibold text-purple-300 mb-2">Tips:</p>
-                  <ul className="text-xs text-zinc-400 space-y-1">
+                  <ul className="text-xs text-slate-600 space-y-1">
                     {aiResponse.recommendation.tips.map((tip, i) => (
                       <li key={i} className="flex items-start gap-1">
                         <span className="text-purple-400">•</span>{tip}
@@ -241,73 +267,76 @@ export function TreeForm({ spec, onUpdate }: TreeFormProps) {
         </div>
       )}
 
-      <div className="space-y-3">
-        <label className="block text-sm font-semibold text-zinc-400 mb-2">
+      <div className={`space-y-3 ${treeConfig.enabled ? '' : 'opacity-50 pointer-events-none'}`}>
+        <label className="block text-sm font-semibold text-slate-600 mb-2">
           Tree Species ({treeConfig.types.length} selected)
         </label>
-        <div className="grid grid-cols-3 gap-2 max-h-48 overflow-y-auto pr-1">
+        <div className="grid grid-cols-2 gap-2 max-h-56 overflow-y-auto pr-1">
           {TREE_TYPES.map((tree) => (
             <button
               key={tree.value}
               onClick={() => toggleTreeType(tree.value)}
               onMouseEnter={() => setSelectedTreeInfo(tree)}
               onMouseLeave={() => setSelectedTreeInfo(null)}
-              className={`px-2 py-2 rounded-lg text-xs font-medium border flex flex-col items-center gap-0.5 transition-colors duration-200 ${
+              title={tree.label}
+              className={`px-2 py-2 rounded-lg text-[11px] font-medium border flex items-center gap-2 text-left transition-colors duration-200 ${
                 treeConfig.types.includes(tree.value)
-                  ? 'bg-white/15 border-white/20 text-white'
-                  : 'bg-white/5 border-white/10 text-zinc-400 hover:bg-white/10 hover:border-white/20 hover:text-zinc-200'
+                  ? 'bg-[#003F7C] border-[#003F7C] text-white'
+                  : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100 hover:border-slate-300 hover:text-slate-800'
               }`}
             >
-              <span className="text-base">{tree.icon}</span>
-              <span className="text-center leading-tight">{tree.label.split(' ')[0]}</span>
+              <span className="text-base shrink-0">{tree.icon}</span>
+              <span className="leading-tight">{tree.label}</span>
             </button>
           ))}
         </div>
       </div>
 
-          {selectedTreeInfo && (
-            <div className="bg-white/5 border border-white/10 rounded-lg p-3 text-xs">
-              <div className="flex items-start gap-2">
-                <span className="text-2xl">{selectedTreeInfo.icon}</span>
-                <div className="flex-1">
-                  <p className="font-bold text-zinc-200">{selectedTreeInfo.label}</p>
-                  <p className="text-zinc-500 italic text-[10px]">{selectedTreeInfo.scientificName}</p>
-                  <p className="text-zinc-400 mt-1">Height: {selectedTreeInfo.height}</p>
-                  <p className="text-zinc-400 mt-1">{selectedTreeInfo.bio}</p>
+          <div className={`space-y-6 ${treeConfig.enabled ? '' : 'opacity-50 pointer-events-none'}`}>
+            {selectedTreeInfo && (
+              <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs">
+                <div className="flex items-start gap-2">
+                  <span className="text-2xl">{selectedTreeInfo.icon}</span>
+                  <div className="flex-1">
+                    <p className="font-bold text-slate-800">{selectedTreeInfo.label}</p>
+                    <p className="text-slate-500 italic text-[10px]">{selectedTreeInfo.scientificName}</p>
+                    <p className="text-slate-600 mt-1">Height: {selectedTreeInfo.height}</p>
+                    <p className="text-slate-600 mt-1">{selectedTreeInfo.bio}</p>
+                  </div>
                 </div>
               </div>
+            )}
+
+            <div className="space-y-3">
+              <label className="block text-sm font-semibold text-slate-600 mb-2">
+                Density: <span className="text-blue-400">{treeConfig.density}</span>
+              </label>
+              <input type="range" min="1" max="10" step="1" value={treeConfig.density}
+                onChange={(e) => updateTreeConfig({ density: parseInt(e.target.value) })} className={sliderClass} />
+              <p className="text-xs text-slate-500">More = more trees around building</p>
             </div>
-          )}
 
-          <div className="space-y-3">
-            <label className="block text-sm font-semibold text-zinc-400 mb-2">
-              Density: <span className="text-blue-400">{treeConfig.density}</span>
-            </label>
-            <input type="range" min="1" max="10" step="1" value={treeConfig.density}
-              onChange={(e) => updateTreeConfig({ density: parseInt(e.target.value) })} className={sliderClass} />
-            <p className="text-xs text-zinc-500">More = more trees around building</p>
-          </div>
+            <div className="space-y-3">
+              <label className="block text-sm font-semibold text-slate-600 mb-2">
+                Spread Radius: <span className="text-blue-400">{treeConfig.radius}m</span>
+              </label>
+              <input type="range" min="3" max="20" step="1" value={treeConfig.radius}
+                onChange={(e) => updateTreeConfig({ radius: parseInt(e.target.value) })} className={sliderClass} />
+              <p className="text-xs text-slate-500">How far trees spread from building edge</p>
+            </div>
 
-          <div className="space-y-3">
-            <label className="block text-sm font-semibold text-zinc-400 mb-2">
-              Spread Radius: <span className="text-blue-400">{treeConfig.radius}m</span>
-            </label>
-            <input type="range" min="3" max="20" step="1" value={treeConfig.radius}
-              onChange={(e) => updateTreeConfig({ radius: parseInt(e.target.value) })} className={sliderClass} />
-            <p className="text-xs text-zinc-500">How far trees spread from building edge</p>
-          </div>
-
-          <div className="pt-4">
-            <button
-              onClick={randomizeSeed}
-              className="w-full px-5 py-2.5 rounded-full font-medium text-sm border bg-white/5 border-white/10 text-zinc-300 hover:bg-white/10 hover:border-white/20 hover:text-white transition-colors duration-200 flex items-center justify-center gap-2"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-              </svg>
-              Randomize Layout
-            </button>
-            <p className="text-xs text-zinc-500 text-center mt-2">Generate a new random arrangement</p>
+            <div className="pt-4">
+              <button
+                onClick={randomizeSeed}
+                className="w-full px-5 py-2.5 rounded-full font-medium text-sm border bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100 hover:border-slate-300 hover:text-slate-900 transition-colors duration-200 flex items-center justify-center gap-2"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                Randomize Layout
+              </button>
+              <p className="text-xs text-slate-500 text-center mt-2">Generate a new random arrangement</p>
+            </div>
           </div>
     </div>
   );

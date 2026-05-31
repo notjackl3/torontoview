@@ -18,7 +18,7 @@ export function StepFinancials() {
 
       <div className="space-y-5">
         <section>
-          <p className="mb-2 text-[10px] font-bold uppercase tracking-tight text-zinc-400">
+          <p className="mb-2 text-[10px] font-bold uppercase tracking-tight text-slate-600">
             Start-up capital
           </p>
           <div className="grid grid-cols-3 gap-3">
@@ -59,14 +59,14 @@ export function StepFinancials() {
               />
             </Field>
           </div>
-          <p className="mt-2 text-[10px] text-zinc-500">
-            Total capital: <span className="text-zinc-200 font-mono">${totalCapital.toLocaleString()}</span>
+          <p className="mt-2 text-[10px] text-slate-500">
+            Total capital: <span className="text-slate-800 font-mono">${totalCapital.toLocaleString()}</span>
           </p>
         </section>
 
         {f.capitalLoan > 0 && (
           <section>
-            <p className="mb-2 text-[10px] font-bold uppercase tracking-tight text-zinc-400">
+            <p className="mb-2 text-[10px] font-bold uppercase tracking-tight text-slate-600">
               Loan terms
             </p>
             <div className="grid grid-cols-2 gap-3">
@@ -103,7 +103,7 @@ export function StepFinancials() {
         )}
 
         <section>
-          <p className="mb-2 text-[10px] font-bold uppercase tracking-tight text-zinc-400">
+          <p className="mb-2 text-[10px] font-bold uppercase tracking-tight text-slate-600">
             Monthly fixed costs
           </p>
           <div className="grid grid-cols-2 gap-3">

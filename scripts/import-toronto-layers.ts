@@ -8,6 +8,7 @@
  *   - waterbodies.dump      (Waterbodies CSV with Python-dict geometry col)
  *   - watercourses.geojson  (Water Line, LineString)
  *   - street-trees.csv      (Street Tree Data CSV, point per tree)
+ *   - zoning-area-4326.geojson (Zoning By-law "Zoning Area" polygons)
  *
  * Usage:
  *   npx tsx scripts/import-toronto-layers.ts <input-dir>
@@ -50,6 +51,13 @@ interface TreeFeature {
   dbh: number; // trunk diameter, cm (drives sprite scale)
 }
 
+interface ZoneFeature {
+  id: number;
+  code: string; // ZN_ZONE
+  gen: number; // GEN_ZONE numeric category
+  polygons: Ring[][];
+}
+
 function pointInBbox(lng: number, lat: number): boolean {
   return (
     lng >= BBOX.west &&
@@ -87,6 +95,73 @@ function ringBboxOverlapsBbox(ring: Ring): boolean {
     maxLat < BBOX.south ||
     minLat > BBOX.north
   );
+}
+
+// Waterbody pre-clip bbox: slightly larger than the build BBOX so the renderer
+// has the shoreline arc it needs even when the camera pans outside the
+// buildable area. Must match lib/torontoWaterRenderer.ts:CLIP_BBOX.
+const WATER_CLIP_BBOX = {
+  south: 43.58,
+  north: 43.67,
+  west: -79.42,
+  east: -79.34,
+};
+
+function intersectEdge(
+  a: [number, number],
+  b: [number, number],
+  axis: "x" | "y",
+  v: number,
+): [number, number] {
+  if (axis === "x") {
+    const t = (v - a[0]) / (b[0] - a[0]);
+    return [v, a[1] + t * (b[1] - a[1])];
+  }
+  const t = (v - a[1]) / (b[1] - a[1]);
+  return [a[0] + t * (b[0] - a[0]), v];
+}
+
+function clipRingEdge(
+  ring: Ring,
+  inside: (p: [number, number]) => boolean,
+  cut: (a: [number, number], b: [number, number]) => [number, number],
+): Ring {
+  if (ring.length === 0) return ring;
+  const out: Ring = [];
+  let prev = ring[ring.length - 1];
+  let prevIn = inside(prev);
+  for (const cur of ring) {
+    const curIn = inside(cur);
+    if (curIn) {
+      if (!prevIn) out.push(cut(prev, cur));
+      out.push(cur);
+    } else if (prevIn) {
+      out.push(cut(prev, cur));
+    }
+    prev = cur;
+    prevIn = curIn;
+  }
+  return out;
+}
+
+// Sutherland–Hodgman clip mirroring lib/torontoWaterRenderer.ts. Doing it here
+// shrinks Lake Ontario from ~82k vertices to a few thousand so the JSON is
+// ~7× smaller and the renderer's per-load clip becomes a no-op.
+function clipWaterRingToBbox(ring: Ring): Ring {
+  let r: Ring = ring.slice();
+  r = clipRingEdge(r, (p) => p[0] >= WATER_CLIP_BBOX.west, (a, b) =>
+    intersectEdge(a, b, "x", WATER_CLIP_BBOX.west),
+  );
+  r = clipRingEdge(r, (p) => p[0] <= WATER_CLIP_BBOX.east, (a, b) =>
+    intersectEdge(a, b, "x", WATER_CLIP_BBOX.east),
+  );
+  r = clipRingEdge(r, (p) => p[1] >= WATER_CLIP_BBOX.south, (a, b) =>
+    intersectEdge(a, b, "y", WATER_CLIP_BBOX.south),
+  );
+  r = clipRingEdge(r, (p) => p[1] <= WATER_CLIP_BBOX.north, (a, b) =>
+    intersectEdge(a, b, "y", WATER_CLIP_BBOX.north),
+  );
+  return r;
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -223,10 +298,20 @@ async function importWaterbodies(srcPath: string): Promise<WaterbodyFeature[]> {
     });
     if (kept.length === 0) continue;
 
+    // Pre-clip each polygon's outer ring to the renderer's bbox so we don't
+    // ship megabytes of unused shoreline. Inner rings (holes) are dropped —
+    // the renderer only tessellates poly[0]. Empty results are discarded.
+    const clipped: Ring[][] = [];
+    for (const poly of kept) {
+      const ring = clipWaterRingToBbox(poly[0]);
+      if (ring.length >= 3) clipped.push([ring]);
+    }
+    if (clipped.length === 0) continue;
+
     out.push({
       id: parseInt(cells[idCol] ?? "0") || out.length,
       name,
-      polygons: kept,
+      polygons: clipped,
     });
   }
   return out;
@@ -325,6 +410,39 @@ async function importTrees(srcPath: string): Promise<TreeFeature[]> {
 }
 
 // ────────────────────────────────────────────────────────────────────────────
+// Zoning By-law areas (GeoJSON)
+// ────────────────────────────────────────────────────────────────────────────
+
+function importZoning(srcPath: string): ZoneFeature[] {
+  const raw = JSON.parse(fs.readFileSync(srcPath, "utf-8"));
+  const out: ZoneFeature[] = [];
+
+  for (const f of raw.features) {
+    const g = f.geometry;
+    if (!g) continue;
+    const polys: Ring[][] =
+      g.type === "MultiPolygon"
+        ? (g.coordinates as Ring[][])
+        : g.type === "Polygon"
+          ? [g.coordinates as Ring[]]
+          : [];
+
+    const kept = polys.filter(
+      (poly) => poly[0] && ringBboxOverlapsBbox(poly[0]),
+    );
+    if (kept.length === 0) continue;
+
+    out.push({
+      id: f.properties?._id ?? out.length,
+      code: f.properties?.ZN_ZONE ?? "",
+      gen: f.properties?.GEN_ZONE ?? 0,
+      polygons: kept,
+    });
+  }
+  return out;
+}
+
+// ────────────────────────────────────────────────────────────────────────────
 // Main
 // ────────────────────────────────────────────────────────────────────────────
 
@@ -352,6 +470,11 @@ async function main() {
       name: "trees",
       fn: () => importTrees(path.join(inDir, "street-trees.csv")),
       out: path.join(outDir, "trees.json"),
+    },
+    {
+      name: "zoning",
+      fn: () => importZoning(path.join(inDir, "zoning-area-4326.geojson")),
+      out: path.join(outDir, "zoning.json"),
     },
   ];
 

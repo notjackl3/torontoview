@@ -201,10 +201,10 @@ function SceneContent({ sceneRef }: SceneContentProps) {
           args={[100, 100]}
           cellSize={1}
           cellThickness={0.5}
-          cellColor="#2a3a4a"
+          cellColor="#c3d0e4"
           sectionSize={5}
           sectionThickness={1}
-          sectionColor="#3a5068"
+          sectionColor="#003F7C"
           fadeDistance={100}
           fadeStrength={1}
           infiniteGrid
@@ -251,7 +251,7 @@ interface SceneProps {
 
 export function Scene({ sceneRef }: SceneProps) {
   return (
-    <div className="w-full h-full bg-[#222222]">
+    <div className="w-full h-full bg-[#f5f8fc]">
       <Canvas
         camera={{ position: [30, 30, 30], fov: 50 }}
         gl={{
@@ -259,8 +259,8 @@ export function Scene({ sceneRef }: SceneProps) {
           alpha: false,
           toneMapping: THREE.NoToneMapping,
         }}
-        scene={{ background: new THREE.Color('#222222') }}
-        style={{ background: '#222222' }}
+        scene={{ background: new THREE.Color('#f5f8fc') }}
+        style={{ background: '#f5f8fc' }}
       >
         <SceneContent sceneRef={sceneRef} />
       </Canvas>

@@ -1,0 +1,107 @@
+{
+  "selectedText": "80%",
+  "panel": {
+    "id": "demographics",
+    "title": "Demographics & Catchment",
+    "fields": {
+      "neighbourhood": "Waterfront Communities-The Island",
+      "population": 65913,
+      "densityPerKm2": 8943,
+      "households": 40750,
+      "avgHouseholdSize": 1.61,
+      "incomeRecipients": 60605,
+      "workingAge25to54": 45105,
+      "anchorLat": 43.6394,
+      "anchorLng": -79.3779
+    }
+  },
+  "businessPlan": {
+    "id": "mock-plan-1",
+    "buildingId": "mock-building-1",
+    "name": "Phở & Filter",
+    "category": "cafe",
+    "valueProp": "Hanoi-style phin drip and bánh mì in a sunlit corner café — slow coffee, fast lunch, soft jazz.",
+    "targetAgeMin": 22,
+    "targetAgeMax": 45,
+    "targetIncomeTier": "$$",
+    "serviceModel": "counter",
+    "seatingCapacity": 24,
+    "rent": 6200
+  },
+  "buildings": [
+    {
+      "id": "mock-building-1",
+      "lat": 43.6394,
+      "lng": -79.3779,
+      "buildMode": "new-build",
+      "floors": 3,
+      "floorHeightM": 3.5,
+      "totalHeightM": 10.5,
+      "footprintSqm": 380,
+      "gfaSqm": 1140,
+      "rotationDeg": 0,
+      "scale": {
+        "x": 1,
+        "y": 3,
+        "z": 1
+      },
+      "tenantFloor": 1,
+      "neighbourhoodName": "Waterfront Communities-The Island",
+      "zoningCode": "CR"
+    }
+  ],
+  "analyses": {
+    "demographics": {
+      "neighbourhood": "Waterfront Communities-The Island",
+      "densityPerKm2": 8943,
+      "households": 40750,
+      "avgHouseholdSize": 1.61,
+      "workingAge25to54": 45105,
+      "matchPct": 80,
+      "matchVerdict": "Strong fit"
+    }
+  },
+  "cityFacts": {
+    "neighbourhoodName": "Waterfront Communities-The Island",
+    "populationDensity": 8943,
+    "households": 40750,
+    "ageMix": {
+      "workingAge25to54Pct": 68,
+      "youth15to24Pct": 12,
+      "seniors65plusPct": 7
+    },
+    "nearbyBusinesses": [
+      {
+        "name": "Boxcar Social",
+        "cat": "cafe",
+        "distanceM": 120
+      },
+      {
+        "name": "Sumach Espresso",
+        "cat": "cafe",
+        "distanceM": 240
+      },
+      {
+        "name": "Lavelle",
+        "cat": "restaurant",
+        "distanceM": 310
+      }
+    ],
+    "nearbyParks": [
+      {
+        "name": "HTO Park",
+        "distanceM": 180
+      }
+    ],
+    "streetTreesWithin50m": 14,
+    "waterFeaturesWithin200m": [
+      {
+        "name": "Lake Ontario",
+        "distanceM": 90
+      }
+    ],
+    "intersectionsWithin250m": 4,
+    "walkabilityHint": "high"
+  },
+  "generatedAt": 1780232971511
+}

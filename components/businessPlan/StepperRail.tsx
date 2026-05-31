@@ -28,28 +28,28 @@ export function StepperRail({ steps, currentIndex, onSelect }: StepperRailProps)
             onClick={() => onSelect(idx)}
             className={`group flex items-center gap-3 rounded-md px-3 py-2.5 text-left transition-colors ${
               isActive
-                ? "bg-blue-500/15 border border-blue-400/30"
-                : "border border-transparent hover:bg-white/5"
+                ? "bg-[#003F7C]/8 border border-[#003F7C]/30"
+                : "border border-transparent hover:bg-[#003F7C]/5"
             }`}
           >
             <div
               className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full border text-[10px] font-bold ${
                 isActive
-                  ? "bg-blue-500/30 border-blue-400/60 text-blue-100"
-                  : "bg-white/5 border-white/10 text-zinc-400"
+                  ? "bg-[#003F7C] border-[#003F7C] text-white"
+                  : "bg-white border-[#003F7C]/15 text-slate-500"
               }`}
             >
               <Icon size={13} />
             </div>
             <div className="min-w-0 flex-1">
               <p
-                className={`text-[11px] font-bold uppercase tracking-tight ${
-                  isActive ? "text-blue-100" : "text-zinc-200"
+                className={`text-[11px] font-black uppercase tracking-tight ${
+                  isActive ? "text-[#003F7C]" : "text-slate-800"
                 }`}
               >
                 {step.label}
               </p>
-              <p className="truncate text-[9px] text-zinc-500">{step.hint}</p>
+              <p className="truncate text-[9px] text-slate-500">{step.hint}</p>
             </div>
           </button>
         );

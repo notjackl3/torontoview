@@ -44,6 +44,31 @@ const nextConfig: NextConfig = {
 
   // Transpile Three.js and R3F packages
   transpilePackages: ["three", "@react-three/fiber", "@react-three/drei"],
+
+  // Long-lived cache headers for 3D model assets. Building IDs are random and
+  // bundled GLBs are content-stable, so a 1-year immutable cache is safe.
+  async headers() {
+    return [
+      {
+        source: "/map-data/buildings/:path*",
+        headers: [
+          {
+            key: "Cache-Control",
+            value: "public, max-age=31536000, immutable",
+          },
+        ],
+      },
+      {
+        source: "/let_me_sleeeeeeep/:path*",
+        headers: [
+          {
+            key: "Cache-Control",
+            value: "public, max-age=31536000, immutable",
+          },
+        ],
+      },
+    ];
+  },
 };
 
 export default nextConfig;

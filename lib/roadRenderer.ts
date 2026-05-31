@@ -1,6 +1,8 @@
 import * as THREE from "three";
 import { CityProjection } from "./projection";
 import { RoadEdge } from "./roadNetwork";
+import { getTheme, type MapStyle } from "./mapTheme";
+import { trafficLevelForEdge, trafficLevelToColor } from "./trafficDensity";
 
 /**
  * Road Renderer with realistic widths, mitered joins, and visual hierarchy
@@ -16,46 +18,53 @@ const SCALE_FACTOR = 10 / 1.4;
  * - 30 km/h → residential
  */
 /**
- * Road style by speed class. Realistic asphalt greys; arterials are a touch
- * darker (fresher asphalt) and get a white centerline. Residential streets
- * are lighter / weathered. Reads naturally against the green ground plane.
+ * Road style by speed class. Asphalt greys in satellite mode, Apple-Maps
+ * cool light-grays in light mode. Arterials are a touch darker (fresher
+ * asphalt) and get a white centerline; residential streets are lighter.
  */
 function getRoadStyle(
   speedLimit: number,
   lanes: number,
+  mapStyle: MapStyle = "satellite",
 ): {
   width: number;
   color: number;
   centerLine: boolean;
   centerLineColor: number;
 } {
+  const palette = getTheme(mapStyle).road;
   let laneWidth: number;
   let shoulder: number;
   let color: number;
   let centerLine = false;
-  const centerLineColor = 0xf5f1e0; // off-white
+  const centerLineColor = palette.centerLine;
+
+  // OSM lane counts are noisy (turn lanes, bus lanes, parking lanes inflate
+  // residential streets to 4-6 lanes). Cap to a reasonable visual maximum so
+  // a mis-tagged residential road doesn't render as a 30 m ribbon.
+  const renderLanes = Math.min(Math.max(lanes, 1), 4);
 
   if (speedLimit >= 60) {
-    laneWidth = 3.7;
-    shoulder = 1.0;
-    color = 0x555555; // arterial asphalt
+    laneWidth = 2.2;
+    shoulder = 0.5;
+    color = palette.arterial;
     centerLine = true;
   } else if (speedLimit >= 50) {
-    laneWidth = 3.5;
-    shoulder = 0.5;
-    color = 0x666666; // secondary
+    laneWidth = 2.1;
+    shoulder = 0.3;
+    color = palette.secondary;
     centerLine = true;
   } else if (speedLimit >= 40) {
-    laneWidth = 3.3;
-    shoulder = 0.3;
-    color = 0x787878; // tertiary
+    laneWidth = 2.0;
+    shoulder = 0.15;
+    color = palette.tertiary;
   } else {
-    laneWidth = 3.0;
+    laneWidth = 1.8;
     shoulder = 0.0;
-    color = 0x8a8a8a; // residential, weathered
+    color = palette.residential;
   }
 
-  const totalWidth = (lanes * laneWidth + shoulder * 2) * SCALE_FACTOR;
+  const totalWidth = (renderLanes * laneWidth + shoulder * 2) * SCALE_FACTOR;
   return { width: totalWidth, color, centerLine, centerLineColor };
 }
 
@@ -66,11 +75,32 @@ export function renderRoads(
   edges: RoadEdge[],
   projection: typeof CityProjection,
   scene: THREE.Object3D,
+  mapStyle: MapStyle = "satellite",
 ): void {
-  console.log(`Rendering ${edges.length} roads...`);
+  // Deduplicate forward/reverse edges that share geometry — the road network
+  // creates a reverse twin for every two-way street, but they overlay perfectly
+  // and just double the polygon count.
+  const renderedWays = new Set<string>();
+  let skippedShort = 0;
+  let skippedDuplicate = 0;
 
   edges.forEach((edge) => {
     if (edge.geometry.length < 2) return;
+
+    // Drop tiny stub edges — OSM service driveways and parking-lot connectors
+    // that produce L-shaped fragments overlapping buildings.
+    if (edge.length < 8) {
+      skippedShort++;
+      return;
+    }
+
+    // Reverse-twin edge id is "way-<id>-reverse"; collapse to the base way id.
+    const wayKey = edge.id.replace(/-reverse$/, "");
+    if (renderedWays.has(wayKey)) {
+      skippedDuplicate++;
+      return;
+    }
+    renderedWays.add(wayKey);
 
     const points = edge.geometry.map((coord) =>
       projection.projectToWorld(coord),
@@ -79,26 +109,227 @@ export function renderRoads(
     const { width, color, centerLine, centerLineColor } = getRoadStyle(
       edge.speedLimit,
       edge.lanes,
+      mapStyle,
     );
-    const roadMesh = createRoadMesh(points, width, color);
-    roadMesh.position.y = 0.5;
+    const roadMesh = createRoadMesh(points, width, color, mapStyle);
+    // Lift the road surface clear of the ground plane. With the renderer's
+    // logarithmic depth buffer this only needs to be a small visual offset
+    // — 2 world units (~28 cm at the 7.14× world scale) is enough to keep
+    // the asphalt reading above any ground texture without making roads
+    // look like elevated ribbons at close zoom.
+    roadMesh.position.y = 2.0;
     roadMesh.name = `road-${edge.id || "segment"}`;
     roadMesh.userData.isRoad = true;
     roadMesh.userData.roadWidth = width;
+    roadMesh.userData.roadSpeedLimit = edge.speedLimit;
     scene.add(roadMesh);
 
     // Warm centerline strip for arterials/secondaries — sits a hair above
     // the road surface so it shows but doesn't cause z-fighting.
     if (centerLine) {
-      const stripeWidth = Math.max(width * 0.04, 0.6 * SCALE_FACTOR);
-      const stripe = createRoadMesh(points, stripeWidth, centerLineColor);
-      stripe.position.y = 0.6;
+      const stripeWidth = Math.max(width * 0.04, 0.4 * SCALE_FACTOR);
+      const stripe = createRoadMesh(points, stripeWidth, centerLineColor, mapStyle);
+      stripe.position.y = 2.2;
       stripe.userData.isRoadCenterLine = true;
       scene.add(stripe);
     }
   });
 
-  console.log("✅ Roads rendered");
+  console.log(
+    `✅ Roads rendered (${renderedWays.size} ways, skipped ${skippedDuplicate} reverse twins, ${skippedShort} short stubs)`,
+  );
+}
+
+/**
+ * Recolor already-rendered road and centerline meshes in place. Used when the
+ * user toggles the base style — far cheaper than rebuilding the network.
+ *
+ * Roads carry `userData.isRoad` and `userData.roadSpeedLimit`; centerline
+ * stripes carry `userData.isRoadCenterLine`. Anything else is left alone.
+ */
+export function updateRoadColors(
+  scene: THREE.Object3D,
+  mapStyle: MapStyle,
+): void {
+  const palette = getTheme(mapStyle).road;
+
+  const colorForSpeed = (speed: number): number => {
+    if (speed >= 60) return palette.arterial;
+    if (speed >= 50) return palette.secondary;
+    if (speed >= 40) return palette.tertiary;
+    return palette.residential;
+  };
+
+  scene.traverse((obj) => {
+    if (!(obj instanceof THREE.Mesh)) return;
+    const ud = obj.userData;
+    let nextColor: number | null = null;
+    if (ud.isRoad) {
+      nextColor = colorForSpeed(ud.roadSpeedLimit ?? 30);
+    } else if (ud.isRoadCenterLine) {
+      nextColor = palette.centerLine;
+    }
+    if (nextColor === null) return;
+
+    const currentMat = obj.material as THREE.Material | undefined;
+    const wantBasic = mapStyle === "light";
+    const isBasic = currentMat instanceof THREE.MeshBasicMaterial;
+
+    // Swap material type if the mode change requires it (unlit ↔ asphalt-lit).
+    // Cheaper than rebuilding the mesh, but still rare since users toggle
+    // styles infrequently.
+    if (wantBasic !== isBasic) {
+      currentMat?.dispose();
+      obj.material = createRoadSurfaceMaterial(nextColor, mapStyle);
+      obj.receiveShadow = !wantBasic;
+      return;
+    }
+
+    if (
+      currentMat instanceof THREE.MeshStandardMaterial ||
+      currentMat instanceof THREE.MeshBasicMaterial
+    ) {
+      currentMat.color.setHex(nextColor);
+      currentMat.needsUpdate = true;
+    }
+  });
+}
+
+/**
+ * Geospatial Road Traffic heatmap. Renders one colored strip per road edge
+ * laid directly on the road surface, with color driven by a synthetic 24-hour
+ * traffic curve (see lib/trafficDensity.ts). One mesh per edge so we can
+ * cheaply re-color in place as the user scrubs the time slider — no
+ * geometry rebuilds.
+ */
+export function renderTrafficDensityLayer(
+  edges: RoadEdge[],
+  projection: typeof CityProjection,
+  hour: number,
+  mapStyle: MapStyle = "satellite",
+): THREE.Group {
+  const group = new THREE.Group();
+  group.name = "trafficDensityLayer";
+
+  const renderedWays = new Set<string>();
+  for (const edge of edges) {
+    if (edge.geometry.length < 2) continue;
+    if (edge.length < 8) continue;
+    const wayKey = edge.id.replace(/-reverse$/, "");
+    if (renderedWays.has(wayKey)) continue;
+    renderedWays.add(wayKey);
+
+    const points = edge.geometry.map((c) => projection.projectToWorld(c));
+    const { width } = getRoadStyle(edge.speedLimit, edge.lanes, mapStyle);
+    // Overlay is slightly narrower than the road so the road's own edges
+    // still show through and the strip reads as "paint on asphalt" rather
+    // than replacing the road entirely.
+    const overlayWidth = width * 0.78;
+
+    const level = trafficLevelForEdge(edge, hour);
+    const color = trafficLevelToColor(level);
+    // Reuse the existing strip helper (mitered, per-edge mesh) for geometry,
+    // then immediately swap in our own material — the shared helper bakes in
+    // a 0.35–0.80 opacity range that makes off-peak hours barely visible. We
+    // want the heatmap to read clearly the moment it's toggled on, so we
+    // floor opacity at 0.75 and saturate to 1.0 at gridlock.
+    const strip = createHeatmapStrip(points, overlayWidth, color, level);
+    strip.material = trafficDensityMaterial(color, level);
+    // Sit above the road surface (y=2.0) and centerline (y=2.2) but below
+    // the impact-analysis heatmap (y=4.5) so the two can coexist.
+    strip.position.y = 2.8;
+    // Above parks (renderOrder 1) so where a road crosses a park the
+    // congestion color wins, matching the geospatial-layers panel order.
+    // Below zoning (renderOrder 9999, depthTest off) so zoning still beats
+    // everything per the user's priority rule.
+    strip.renderOrder = 50;
+    strip.name = `traffic-density-${edge.id}`;
+    strip.userData.isTrafficDensity = true;
+    strip.userData.edgeId = edge.id;
+    strip.userData.edgeSpeedLimit = edge.speedLimit;
+    group.add(strip);
+  }
+
+  return group;
+}
+
+/**
+ * Material for a single traffic-density strip. Unlit so the green/red color
+ * is constant under any sun angle (matches the road-surface treatment in
+ * light mode), and opacity stays high enough that off-peak roads are still
+ * clearly green rather than ghostly.
+ */
+function trafficDensityMaterial(color: number, level: number): THREE.MeshBasicMaterial {
+  return new THREE.MeshBasicMaterial({
+    color,
+    transparent: true,
+    opacity: 0.75 + level * 0.25,
+    side: THREE.DoubleSide,
+    depthWrite: false,
+    // No polygonOffset: see createRoadSurfaceMaterial — the renderer's
+    // logarithmic depth buffer makes negative polygonOffsets hide layers
+    // behind the ground plane. Rely on the strip's positive Y offset.
+  });
+}
+
+/**
+ * Re-tint an existing traffic-density layer to a new hour without rebuilding
+ * geometry. Used by the time-slider effect.
+ */
+export function updateTrafficDensityLayer(
+  group: THREE.Group,
+  edges: RoadEdge[],
+  hour: number,
+): void {
+  const byId = new Map(edges.map((e) => [e.id, e]));
+  group.traverse((obj) => {
+    if (!(obj instanceof THREE.Mesh)) return;
+    if (!obj.userData.isTrafficDensity) return;
+    const edge = byId.get(obj.userData.edgeId);
+    if (!edge) return;
+    const level = trafficLevelForEdge(edge, hour);
+    const mat = obj.material;
+    if (
+      mat instanceof THREE.MeshBasicMaterial ||
+      mat instanceof THREE.MeshStandardMaterial
+    ) {
+      mat.color.setHex(trafficLevelToColor(level));
+      // Match the floor used in trafficDensityMaterial — keeps quiet roads
+      // clearly visible after the user scrubs to 3 AM.
+      mat.opacity = 0.75 + level * 0.25;
+      mat.needsUpdate = true;
+    }
+  });
+}
+
+/**
+ * Build the road surface material. In satellite mode the road is asphalt — a
+ * lit MeshStandardMaterial so it reads as a real surface that shadows fall
+ * onto. In light mode roads are a graphic element like parks: an unlit
+ * MeshBasicMaterial keeps the grey constant regardless of sun angle, so
+ * morning low-angle sunlight no longer blows the road out to white.
+ */
+function createRoadSurfaceMaterial(
+  color: number,
+  mapStyle: MapStyle,
+): THREE.Material {
+  // We rely on a small positive Y offset (set on the mesh) + the renderer's
+  // logarithmic depth buffer to keep roads above the ground plane. We
+  // deliberately do NOT use polygonOffset here: under log-depth the offset
+  // is applied in linear screen-space and ends up pushing the polygon
+  // *behind* the ground in log-z, which made roads invisible.
+  if (mapStyle === "light") {
+    return new THREE.MeshBasicMaterial({
+      color,
+      side: THREE.DoubleSide,
+    });
+  }
+  return new THREE.MeshStandardMaterial({
+    color,
+    roughness: 0.95,
+    metalness: 0.0,
+    side: THREE.DoubleSide,
+  });
 }
 
 /**
@@ -108,11 +339,12 @@ function createRoadMesh(
   points: THREE.Vector3[],
   width: number,
   color: number,
+  mapStyle: MapStyle = "satellite",
 ): THREE.Mesh {
   if (points.length === 2) {
-    return createStraightRoad(points[0], points[1], width, color);
+    return createStraightRoad(points[0], points[1], width, color, mapStyle);
   } else {
-    return createCurvedRoad(points, width, color);
+    return createCurvedRoad(points, width, color, mapStyle);
   }
 }
 
@@ -124,6 +356,7 @@ function createStraightRoad(
   end: THREE.Vector3,
   width: number,
   color: number,
+  mapStyle: MapStyle = "satellite",
 ): THREE.Mesh {
   const direction = new THREE.Vector3().subVectors(end, start);
   const length = direction.length();
@@ -135,20 +368,13 @@ function createStraightRoad(
   const angle = Math.atan2(direction.x, -direction.z);
   geometry.rotateZ(angle);
 
-  const material = new THREE.MeshStandardMaterial({
-    color,
-    roughness: 0.95,
-    metalness: 0.0,
-    side: THREE.DoubleSide,
-    polygonOffset: true,
-    polygonOffsetFactor: -1,
-    polygonOffsetUnits: -1,
-  });
+  const material = createRoadSurfaceMaterial(color, mapStyle);
 
   const mesh = new THREE.Mesh(geometry, material);
   mesh.position.copy(midpoint);
   mesh.rotateX(-Math.PI / 2);
-  mesh.receiveShadow = true;
+  // Unlit materials don't participate in shadow receiving; skip the cost.
+  mesh.receiveShadow = mapStyle !== "light";
 
   return mesh;
 }
@@ -160,6 +386,7 @@ function createCurvedRoad(
   points: THREE.Vector3[],
   width: number,
   color: number,
+  mapStyle: MapStyle = "satellite",
 ): THREE.Mesh {
   const geometry = new THREE.BufferGeometry();
   const half = width / 2;
@@ -191,9 +418,10 @@ function createCurvedRoad(
         .normalize();
 
       // Scale to maintain consistent width through the miter
-      // miterScale = 1 / cos(halfAngle) — clamped to avoid extreme spikes
+      // miterScale = 1 / cos(halfAngle) — clamped tightly to avoid bulging
+      // ribbons at sharp corners (a 90° turn would otherwise widen 1.41×).
       const dot = segRights[i - 1].dot(segRights[i]);
-      const miterScale = Math.min(1 / Math.sqrt((1 + dot) / 2), 2.0);
+      const miterScale = Math.min(1 / Math.sqrt((1 + dot) / 2), 1.25);
       right.multiplyScalar(miterScale);
     }
 
@@ -218,18 +446,10 @@ function createCurvedRoad(
   geometry.setIndex(indices);
   geometry.computeVertexNormals();
 
-  const material = new THREE.MeshStandardMaterial({
-    color,
-    roughness: 0.95,
-    metalness: 0.0,
-    side: THREE.DoubleSide,
-    polygonOffset: true,
-    polygonOffsetFactor: -1,
-    polygonOffsetUnits: -1,
-  });
+  const material = createRoadSurfaceMaterial(color, mapStyle);
 
   const mesh = new THREE.Mesh(geometry, material);
-  mesh.receiveShadow = true;
+  mesh.receiveShadow = mapStyle !== "light";
   return mesh;
 }
 
@@ -331,7 +551,7 @@ export function renderTrafficHeatmap(
       mesh = createHeatmapStrip(points, overlayWidth, color, impact.level);
     }
 
-    mesh.position.y = 3.0;
+    mesh.position.y = 4.5;
     mesh.name = `heatmap-${edge.id}`;
     group.add(mesh);
   });
@@ -437,7 +657,7 @@ function createHeatmapStrip(
         .addVectors(segRights[i - 1], segRights[i])
         .normalize();
       const dot = segRights[i - 1].dot(segRights[i]);
-      const miterScale = Math.min(1 / Math.sqrt((1 + dot) / 2), 2.0);
+      const miterScale = Math.min(1 / Math.sqrt((1 + dot) / 2), 1.25);
       right.multiplyScalar(miterScale);
     }
 
@@ -529,7 +749,7 @@ function createGradientHeatmapStrip(
         .addVectors(segRights[i - 1], segRights[i])
         .normalize();
       const dot = segRights[i - 1].dot(segRights[i]);
-      const miterScale = Math.min(1 / Math.sqrt((1 + dot) / 2), 2.0);
+      const miterScale = Math.min(1 / Math.sqrt((1 + dot) / 2), 1.25);
       right.multiplyScalar(miterScale);
     }
 

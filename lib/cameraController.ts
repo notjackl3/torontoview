@@ -23,7 +23,7 @@ export function setupControls(
   controls.enableRotate = true;
 
   controls.minDistance = 2;
-  controls.maxDistance = 12000;
+  controls.maxDistance = 35000;
 
   controls.panSpeed = 1.5;
   controls.rotateSpeed = 0.8;
@@ -467,6 +467,118 @@ export function isInStreetMode(): boolean {
   return savedCameraState !== null;
 }
 
+/** World units per metre — must match CityProjection.SCALE_FACTOR. */
+const M_TO_WORLD = 10 / 1.4;
+
+/**
+ * Animate camera onto the outside of a building's wall at floor height
+ * `floorHeightM` on face `facingDeg` (compass bearing: 0=N, 90=E, 180=S,
+ * 270=W) and look outward over the city.
+ *
+ * The camera sits about 1 m outside the perimeter so the wall is at the
+ * viewer's back (no clipping into the building geometry) and we get a
+ * clean window-view onto the surrounding city. We don't fly through the
+ * building — the user explicitly didn't want to "go inside". Saved
+ * bird-eye state is recorded just like street-level POV so exitStreetLevel
+ * returns the user to where they were.
+ */
+export function flyToBuildingView(
+  camera: THREE.Camera,
+  controls: OrbitControls,
+  worldX: number,
+  worldZ: number,
+  floorHeightM: number,
+  facingDeg: number,
+  footprintRadiusM: number,
+  duration: number = 1500,
+): Promise<void> {
+  savedCameraState = {
+    position: camera.position.clone(),
+    target: controls.target.clone(),
+    minPolarAngle: controls.minPolarAngle,
+    maxPolarAngle: controls.maxPolarAngle,
+    minDistance: controls.minDistance,
+    maxDistance: controls.maxDistance,
+    enablePan: controls.enablePan,
+    enableZoom: controls.enableZoom,
+    zoomToCursor: controls.zoomToCursor,
+  };
+
+  // Convert compass bearing → 3D direction on the XZ plane.
+  // Three.js: +X = east, -Z = north, so bearing 0° (north) maps to (0, 0, -1).
+  const facingRad = (facingDeg * Math.PI) / 180;
+  const dirX = Math.sin(facingRad);
+  const dirZ = -Math.cos(facingRad);
+
+  // Camera lands flush with the wall at the chosen floor's eye height.
+  const outsetM = footprintRadiusM + 0.3;
+  const camY = floorHeightM * M_TO_WORLD;
+  const endPosition = {
+    x: worldX + dirX * outsetM * M_TO_WORLD,
+    y: camY,
+    z: worldZ + dirZ * outsetM * M_TO_WORLD,
+  };
+  // OrbitControls orbits around `target`, so to get first-person look-around
+  // we put the target just a few metres in front of the camera along the
+  // outward direction (with a hair of downward tilt). Previously the target
+  // sat 200 m downrange while onComplete set maxDistance=50 — OrbitControls
+  // then clamped the camera-to-target distance and yanked the camera ~150
+  // world units forward, which read as "the camera snaps forward in a random
+  // direction after arriving". With a close target the clamp is inert and
+  // a 180° azimuth swing brings the wall back into view a few metres away.
+  const TARGET_OFFSET_WORLD = 15;
+  const endTarget = {
+    x: endPosition.x + dirX * TARGET_OFFSET_WORLD,
+    y: camY - 0.4,
+    z: endPosition.z + dirZ * TARGET_OFFSET_WORLD,
+  };
+
+  return new Promise((resolve) => {
+    const startPos = {
+      x: camera.position.x,
+      y: camera.position.y,
+      z: camera.position.z,
+    };
+    const startTarget = {
+      x: controls.target.x,
+      y: controls.target.y,
+      z: controls.target.z,
+    };
+
+    new TWEEN.Tween(startPos)
+      .to(endPosition, duration)
+      .easing(TWEEN.Easing.Cubic.InOut)
+      .onUpdate(() => camera.position.set(startPos.x, startPos.y, startPos.z))
+      .start();
+
+    new TWEEN.Tween(startTarget)
+      .to(endTarget, duration)
+      .easing(TWEEN.Easing.Cubic.InOut)
+      .onUpdate(() => {
+        controls.target.set(startTarget.x, startTarget.y, startTarget.z);
+        controls.update();
+      })
+      .onComplete(() => {
+        controls.enablePan = false;
+        controls.enableZoom = false;
+        controls.zoomToCursor = false;
+        // Bounds straddle the 15-unit orbit radius so OrbitControls does NOT
+        // clamp the camera-to-target distance on update() (the previous
+        // [0.1, 50] window combined with a 200 m target was the snap-forward
+        // bug). Zoom is disabled, so the distance never drifts off 15.
+        controls.minDistance = 5;
+        controls.maxDistance = 40;
+        // Full vertical look range — we're up high and want to be able to look
+        // straight down at the ground.
+        controls.minPolarAngle = 0.05;
+        controls.maxPolarAngle = Math.PI - 0.05;
+        controls.update();
+        resolve();
+      })
+      .start();
+  });
+}
+
 /**
  * Update WASD movement for street-level mode.
  * Keeps camera at pedestrian height, moves along XZ plane.
@@ -510,7 +622,10 @@ export function flyToLocation(
   controls: OrbitControls,
   lngLat: [number, number],
   altitude: number = 200,
-  duration: number = 2000
+  duration: number = 2000,
+  /** Horizontal offset (world units) from the target. Larger = wider, more
+   *  oblique view. Default 100 keeps existing call sites unchanged. */
+  horizontalOffset: number = 100,
 ): Promise<void> {
   return new Promise((resolve) => {
     const targetPosition = CityProjection.projectToWorld(lngLat);
@@ -522,9 +637,9 @@ export function flyToLocation(
     };
 
     const endPosition = {
-      x: targetPosition.x - 100,
+      x: targetPosition.x - horizontalOffset,
       y: altitude,
-      z: targetPosition.z + 100,
+      z: targetPosition.z + horizontalOffset,
     };
 
     const startTarget = {
