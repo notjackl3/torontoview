@@ -2,6 +2,7 @@
 import AdmZip from "adm-zip";
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
+import { createWriteStream } from "node:fs";
 import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import * as XLSX from "xlsx";
@@ -390,7 +391,20 @@ function trainingExamples() {
 }
 
 async function writeJsonl(filePath, rows) {
-  await writeFile(filePath, rows.map((row) => JSON.stringify(row)).join("\n") + "\n");
+  const stream = createWriteStream(filePath, { encoding: "utf8" });
+  try {
+    for (const row of rows) {
+      if (!stream.write(`${JSON.stringify(row)}\n`)) {
+        await new Promise((resolve) => stream.once("drain", resolve));
+      }
+    }
+  } finally {
+    stream.end();
+  }
+  await new Promise((resolve, reject) => {
+    stream.on("finish", resolve);
+    stream.on("error", reject);
+  });
 }
 
 async function main() {
