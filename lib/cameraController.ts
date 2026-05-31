@@ -23,7 +23,7 @@ export function setupControls(
   controls.enableRotate = true;
 
   controls.minDistance = 2;
-  controls.maxDistance = 100000;
+  controls.maxDistance = 12000;
 
   controls.panSpeed = 1.5;
   controls.rotateSpeed = 0.8;

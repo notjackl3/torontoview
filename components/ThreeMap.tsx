@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { useRouter } from "next/navigation";
 import * as THREE from "three";
 import * as turf from "@turf/turf";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
@@ -9,6 +10,16 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { OutlinePass } from "three/examples/jsm/postprocessing/OutlinePass.js";
 import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
+import { Briefcase } from "lucide-react";
+import {
+  consumeNextBusinessId,
+  peekNextBusinessId,
+} from "@/lib/businessIdCounter";
+import { getOsmPlanId, setOsmPlanId } from "@/lib/osmBusinessPlans";
+import {
+  computeBuildingClusters,
+  type BuildingClusterIndex,
+} from "@/lib/buildingClusters";
 
 // Scene management
 import { createSceneManager, handleResize } from "@/lib/sceneManager";
@@ -17,7 +28,7 @@ import { createSceneManager, handleResize } from "@/lib/sceneManager";
 import { fetchBuildings } from "@/lib/buildingData";
 import { renderBuildings } from "@/lib/buildingRenderer";
 import { renderRoads, renderTrafficHeatmap, renderCongestionMarkers, renderBarricadeMarkers } from "@/lib/roadRenderer";
-import { createGround, fetchSatelliteImagery, createSky, createCelestialBodies } from "@/lib/environmentRenderer";
+import { createGround, createSky, createCelestialBodies } from "@/lib/environmentRenderer";
 import { computeTimeOfDay, applyTimeOfDay } from "@/lib/sun/timeOfDay";
 import { analyzeShadowImpact, applyShadowOverlay as applyShadowOverlayFn } from "@/lib/sun/shadowAnalysis";
 import {
@@ -83,6 +94,9 @@ import {
   getConstructionSourceDb,
 } from "@/lib/constructionNoise";
 import { loadAndRenderZoningLayer } from "@/lib/zoningRenderer";
+import { loadAndRenderParksLayer } from "@/lib/parksRenderer";
+import { loadAndRenderWaterLayer } from "@/lib/torontoWaterRenderer";
+import { loadAndRenderTorontoTreesLayer } from "@/lib/torontoTreesRenderer";
 import { createWindVisualization, WindVisualization, WindCell, precomputeWindFields } from "@/lib/windSimulation";
 import type { WindDataSet } from "@/lib/windData";
 
@@ -125,6 +139,12 @@ interface ThreeMapProps {
   timelineDate?: string;
   showNoiseRipple?: boolean;
   showZoningLayer?: boolean;
+  /** Show Toronto parks/green-spaces polygons */
+  showParksLayer?: boolean;
+  /** Show Toronto waterbodies (Lake Ontario shoreline + inland ponds) */
+  showWaterLayer?: boolean;
+  /** Show Toronto street-trees (instanced trunk + foliage per tree) */
+  showTorontoTreesLayer?: boolean;
   /** Show wind effect visualization overlay */
   showWindLayer?: boolean;
   /** Hourly wind data from Open-Meteo for time-of-day scrubbing */
@@ -164,6 +184,8 @@ interface ThreeMapProps {
   } | null>;
   /** Called once after OSM buildings are fetched, passing the raw building data array */
   onOsmBuildingsLoaded?: (buildings: import("@/lib/buildingData").Building[]) => void;
+  /** Called once after OSM clusters are computed (touching buildings grouped together) */
+  onOsmClustersComputed?: (index: BuildingClusterIndex) => void;
   /** When set, applies stakeholder impact color-coding to OSM building meshes */
   stakeholderImpactAnalysis?: import("@/lib/stakeholderImpact").StakeholderAnalysis | null;
   /** Show traffic impact heatmap overlay on roads */
@@ -509,6 +531,9 @@ export default function ThreeMap({
   timelineDate = new Date().toISOString().slice(0, 10),
   showNoiseRipple = false,
   showZoningLayer = false,
+  showParksLayer = false,
+  showWaterLayer = false,
+  showTorontoTreesLayer = false,
   showWindLayer = false,
   windData = null,
   zoningOffset = { x: 0, z: 0 },
@@ -528,6 +553,7 @@ export default function ThreeMap({
   showProposedBuilding = true,
   shadowAnalysisRef,
   onOsmBuildingsLoaded,
+  onOsmClustersComputed,
   stakeholderImpactAnalysis,
   showTrafficHeatmap = false,
   trafficImpactResult,
@@ -577,10 +603,35 @@ export default function ThreeMap({
   const [selectedOsmBuildingId, setSelectedOsmBuildingId] = useState<
     string | null
   >(null);
+  const clusterIndexRef = useRef<BuildingClusterIndex | null>(null);
+  const router = useRouter();
+  const [osmPlanIdForSelected, setOsmPlanIdForSelected] = useState<number | null>(null);
+  const [nextOsmPlanIdPreview, setNextOsmPlanIdPreview] = useState<number>(1);
+  useEffect(() => {
+    if (selectedOsmBuildingId) {
+      setOsmPlanIdForSelected(getOsmPlanId(selectedOsmBuildingId) ?? null);
+      setNextOsmPlanIdPreview(peekNextBusinessId());
+    } else {
+      setOsmPlanIdForSelected(null);
+    }
+  }, [selectedOsmBuildingId]);
+  const openOsmBusinessPlan = (osmBuildingId: string) => {
+    const existing = getOsmPlanId(osmBuildingId);
+    const planId = existing ?? consumeNextBusinessId();
+    if (existing == null) {
+      setOsmPlanId(osmBuildingId, planId);
+      setOsmPlanIdForSelected(planId);
+      setNextOsmPlanIdPreview(peekNextBusinessId());
+    }
+    router.push(`/plan/business-${planId}?osmBuildingId=${encodeURIComponent(osmBuildingId)}`);
+  };
   const [ghostRotationY, setGhostRotationY] = useState(0); // Rotation for ghost preview
   const noiseRippleGroupRef = useRef<THREE.Group | null>(null);
   const rippleTimeRef = useRef(0);
   const zoningGroupRef = useRef<THREE.Group | null>(null);
+  const parksGroupRef = useRef<THREE.Group | null>(null);
+  const waterGroupRef = useRef<THREE.Group | null>(null);
+  const torontoTreesGroupRef = useRef<THREE.Group | null>(null);
   const windVizRef = useRef<WindVisualization | null>(null);
   const buildingsDataRef = useRef<import("@/lib/buildingData").Building[]>([]);
   const windFieldsRef = useRef<WindCell[][] | null>(null);
@@ -731,48 +782,10 @@ export default function ThreeMap({
     };
   }, [showTrafficHeatmap, trafficImpactResult, barricadedEdgeIds, isReady]);
 
-  // Swap ground tile textures when mapStyle changes
-  useEffect(() => {
-    if (!isReady || !groundGroupRef.current || !rendererRef.current) return;
-    const textureLoader = new THREE.TextureLoader();
-    const maxAniso = rendererRef.current.capabilities.getMaxAnisotropy();
-    groundGroupRef.current.children.forEach((child) => {
-      if (child.name.startsWith("ground-tile-") && child.userData.tileBbox) {
-        const tileBbox = child.userData.tileBbox as [number, number, number, number];
-        const mesh = child as THREE.Mesh;
-        fetchSatelliteImagery(tileBbox, mapStyle).then((imageUrl) => {
-          if (!imageUrl) return;
-          textureLoader.load(imageUrl, (texture) => {
-            texture.anisotropy = maxAniso;
-            texture.minFilter = THREE.LinearMipmapLinearFilter;
-            texture.magFilter = THREE.LinearFilter;
-            texture.generateMipmaps = true;
-            const oldMat = mesh.material as THREE.Material;
-            if (mapStyle === "light") {
-              // MeshBasicMaterial ignores all lighting and shadows — keeps map bright
-              const newMat = new THREE.MeshBasicMaterial({ map: texture });
-              oldMat.dispose();
-              mesh.material = newMat;
-              mesh.receiveShadow = false;
-            } else {
-              // MeshStandardMaterial for satellite — shadows look natural on aerial
-              const newMat = new THREE.MeshStandardMaterial({
-                map: texture,
-                roughness: 0.9,
-                metalness: 0.0,
-                polygonOffset: true,
-                polygonOffsetFactor: 1,
-                polygonOffsetUnits: 1,
-              });
-              oldMat.dispose();
-              mesh.material = newMat;
-              mesh.receiveShadow = true;
-            }
-          });
-        });
-      }
-    });
-  }, [mapStyle, isReady]);
+  // (satellite basemap removed — ground is a single styled plane now)
+  // mapStyle prop is kept for backwards-compat with the sidebar control but
+  // currently has no visual effect on the ground.
+  void mapStyle;
 
   // Fly to target location when prop changes
   useEffect(() => {
@@ -1040,39 +1053,15 @@ export default function ThreeMap({
           bbox[3] + lngSpan * 1.5, // east
         ];
 
-        // Create tiled ground planes (6x6 grid for high-res satellite coverage)
+        // Single styled ground plane — satellite tile imagery removed in favour
+        // of a clean dark backdrop that lets the building extrusions read.
         setLoadingStatus("Creating ground plane...");
         const groundGroup = createGround(
           { minLat: mapBbox[0], maxLat: mapBbox[2], minLng: mapBbox[1], maxLng: mapBbox[3] },
           CityProjection,
-          6,
         );
         groups.environment.add(groundGroup);
         groundGroupRef.current = groundGroup;
-
-        // Load a separate high-res satellite image per tile with anisotropic filtering
-        const textureLoader = new THREE.TextureLoader();
-        const maxAniso = renderer.capabilities.getMaxAnisotropy();
-        groundGroup.children.forEach((child) => {
-          if (child.name.startsWith("ground-tile-") && child.userData.tileBbox) {
-            const tileBbox = child.userData.tileBbox as [number, number, number, number];
-            fetchSatelliteImagery(tileBbox).then((imageUrl) => {
-              if (!imageUrl) return;
-              textureLoader.load(imageUrl, (texture) => {
-                // Max anisotropic filtering for sharp textures at oblique angles
-                texture.anisotropy = maxAniso;
-                texture.minFilter = THREE.LinearMipmapLinearFilter;
-                texture.magFilter = THREE.LinearFilter;
-                texture.generateMipmaps = true;
-                const mesh = child as THREE.Mesh;
-                const mat = mesh.material as THREE.MeshStandardMaterial;
-                mat.map = texture;
-                mat.needsUpdate = true;
-              });
-            });
-          }
-        });
-        console.log(`✅ Loading 36 satellite tiles (anisotropy: ${maxAniso}x)`);
 
         // Fetch and render buildings
         setLoadingStatus("Fetching buildings from OpenStreetMap...");
@@ -1089,6 +1078,11 @@ export default function ThreeMap({
         // Store buildings data for wind simulation and stakeholder analysis
         buildingsDataRef.current = buildings;
         onOsmBuildingsLoaded?.(buildings);
+
+        // Cluster touching/adjacent buildings so they behave as a single entity
+        const clusterIndex = computeBuildingClusters(buildings);
+        clusterIndexRef.current = clusterIndex;
+        onOsmClustersComputed?.(clusterIndex);
 
         // Initialize road network
         setLoadingStatus("Fetching road network from OpenStreetMap...");
@@ -1996,8 +1990,17 @@ export default function ThreeMap({
         }
         if (target?.userData.isOsmBuilding && target.userData.buildingId) {
           const buildingId = target.userData.buildingId;
-          console.log("Clicked OSM building:", buildingId);
-          setSelectedOsmBuildingId(buildingId);
+          // Resolve clicked building → its cluster root ID (touching buildings = one entity)
+          const clusterId =
+            clusterIndexRef.current?.clusterIdByBuildingId.get(buildingId) ??
+            buildingId;
+          console.log(
+            "Clicked OSM building:",
+            buildingId,
+            "→ cluster:",
+            clusterId,
+          );
+          setSelectedOsmBuildingId(clusterId);
           if (onBuildingSelect) {
             onBuildingSelect(null); // Deselect custom building
           }
@@ -2508,13 +2511,15 @@ export default function ThreeMap({
         }
       }
 
-      // Check for selected OSM building
+      // Check for selected OSM building → outline the entire cluster
       if (selectedOsmBuildingId) {
-        const selectedOsmMesh = osmBuildingMeshesRef.current.get(
+        const cluster = clusterIndexRef.current?.clusterById.get(
           selectedOsmBuildingId,
         );
-        if (selectedOsmMesh) {
-          selectedObjects.push(selectedOsmMesh);
+        const ids = cluster?.buildingIds ?? [selectedOsmBuildingId];
+        for (const id of ids) {
+          const mesh = osmBuildingMeshesRef.current.get(id);
+          if (mesh) selectedObjects.push(mesh);
         }
       }
 
@@ -2752,6 +2757,119 @@ export default function ThreeMap({
       zoningGroupRef.current.scale.x = zoningFlipH ? -1 : 1;
     }
   }, [zoningOffset.x, zoningOffset.z, zoningRotationY, zoningFlipH]);
+
+  // Shared cleanup helper for the simple toggleable data layers below
+  // (parks / water / Toronto trees). Mirrors removeZoningGroup but lives at
+  // outer scope so each useEffect can reuse it.
+  const removeLayerGroup = (group: THREE.Group | null) => {
+    if (!group || !groupsRef.current) return;
+    groupsRef.current.dynamicObjects.remove(group);
+    group.traverse((obj) => {
+      if (obj instanceof THREE.Mesh || obj instanceof THREE.InstancedMesh) {
+        (obj as THREE.Mesh).geometry?.dispose();
+        const mat = (obj as THREE.Mesh).material;
+        if (mat instanceof THREE.Material) mat.dispose();
+        else if (Array.isArray(mat)) mat.forEach((m) => m.dispose());
+      }
+      if (obj instanceof THREE.Line) {
+        obj.geometry?.dispose();
+        if (obj.material instanceof THREE.Material) obj.material.dispose();
+      }
+    });
+  };
+
+  // Toronto parks / green-spaces layer
+  useEffect(() => {
+    if (!groupsRef.current || !isReady) return;
+    if (!showParksLayer) {
+      if (parksGroupRef.current) {
+        removeLayerGroup(parksGroupRef.current);
+        parksGroupRef.current = null;
+      }
+      return;
+    }
+    let cancelled = false;
+    loadAndRenderParksLayer()
+      .then((group) => {
+        if (!group) return;
+        if (cancelled) {
+          removeLayerGroup(group);
+          return;
+        }
+        parksGroupRef.current = group;
+        groupsRef.current?.dynamicObjects.add(group);
+      })
+      .catch((err) => console.error("Parks layer load error:", err));
+    return () => {
+      cancelled = true;
+      if (parksGroupRef.current) {
+        removeLayerGroup(parksGroupRef.current);
+        parksGroupRef.current = null;
+      }
+    };
+  }, [showParksLayer, isReady]);
+
+  // Toronto water layer (Lake Ontario shoreline + inland waterbodies + creeks)
+  useEffect(() => {
+    if (!groupsRef.current || !isReady) return;
+    if (!showWaterLayer) {
+      if (waterGroupRef.current) {
+        removeLayerGroup(waterGroupRef.current);
+        waterGroupRef.current = null;
+      }
+      return;
+    }
+    let cancelled = false;
+    loadAndRenderWaterLayer()
+      .then((group) => {
+        if (!group) return;
+        if (cancelled) {
+          removeLayerGroup(group);
+          return;
+        }
+        waterGroupRef.current = group;
+        groupsRef.current?.dynamicObjects.add(group);
+      })
+      .catch((err) => console.error("Water layer load error:", err));
+    return () => {
+      cancelled = true;
+      if (waterGroupRef.current) {
+        removeLayerGroup(waterGroupRef.current);
+        waterGroupRef.current = null;
+      }
+    };
+  }, [showWaterLayer, isReady]);
+
+  // Toronto street trees layer (instanced trunk + foliage)
+  useEffect(() => {
+    if (!groupsRef.current || !isReady) return;
+    if (!showTorontoTreesLayer) {
+      if (torontoTreesGroupRef.current) {
+        removeLayerGroup(torontoTreesGroupRef.current);
+        torontoTreesGroupRef.current = null;
+      }
+      return;
+    }
+    let cancelled = false;
+    loadAndRenderTorontoTreesLayer()
+      .then((group) => {
+        if (!group) return;
+        if (cancelled) {
+          removeLayerGroup(group);
+          return;
+        }
+        torontoTreesGroupRef.current = group;
+        groupsRef.current?.dynamicObjects.add(group);
+      })
+      .catch((err) => console.error("Trees layer load error:", err));
+    return () => {
+      cancelled = true;
+      if (torontoTreesGroupRef.current) {
+        removeLayerGroup(torontoTreesGroupRef.current);
+        torontoTreesGroupRef.current = null;
+      }
+    };
+  }, [showTorontoTreesLayer, isReady]);
 
   // Wind effect visualization layer
   useEffect(() => {
@@ -3241,14 +3359,42 @@ export default function ThreeMap({
         </div>
       )}
 
-      {/* Selected OSM Building - Delete Button */}
+      {/* Selected OSM Building — business plan + delete */}
       {selectedOsmBuildingId && (
-        <div className="absolute bottom-24 left-1/2 transform -translate-x-1/2 z-20">
+        <div className="absolute bottom-24 left-1/2 transform -translate-x-1/2 z-20 flex gap-3">
           <button
-            onClick={() => deleteOsmBuilding(selectedOsmBuildingId)}
-            className="px-6 py-3 bg-red-500 hover:bg-red-600 text-white rounded-lg shadow-lg text-sm font-semibold transition-colors"
+            onClick={() => openOsmBusinessPlan(selectedOsmBuildingId)}
+            className="flex items-center gap-2 px-5 py-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg shadow-lg text-sm font-semibold transition-colors"
+          >
+            <Briefcase size={14} />
+            <span>
+              {osmPlanIdForSelected != null
+                ? `Open business plan #${osmPlanIdForSelected}`
+                : `Add business plan #${nextOsmPlanIdPreview}`}
+            </span>
+          </button>
+          <button
+            onClick={() => {
+              const cluster = clusterIndexRef.current?.clusterById.get(
+                selectedOsmBuildingId,
+              );
+              const ids = cluster?.buildingIds ?? [selectedOsmBuildingId];
+              for (let i = 0; i < ids.length; i++) {
+                // skip API call on all but the last so we hit it once if needed
+                deleteOsmBuilding(ids[i], i < ids.length - 1);
+              }
+              setSelectedOsmBuildingId(null);
+            }}
+            className="px-5 py-3 bg-red-500 hover:bg-red-600 text-white rounded-lg shadow-lg text-sm font-semibold transition-colors"
           >
             Delete Building
+            {(() => {
+              const cluster = clusterIndexRef.current?.clusterById.get(
+                selectedOsmBuildingId,
+              );
+              const count = cluster?.buildingIds.length ?? 1;
+              return count > 1 ? ` (${count} parts)` : "";
+            })()}
           </button>
         </div>
       )}

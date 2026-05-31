@@ -118,9 +118,15 @@ export function computeTimeOfDay(hour: number, dayOfYear: number = 80): TimeOfDa
   let fogDensity: number;
   let groundTint: THREE.Color;
 
-  // Stylized approach: subtle color tinting, full visibility at all times, no fog
-
-  fogDensity = 0; // No fog ever
+  // Atmospheric fog hides the void where map data ends. Tuned so close-up detail
+  // stays crisp and only the far horizon (near maxDistance 12000u) hazes out.
+  if (hour >= 8 && hour < 17) {
+    fogDensity = 0.00008; // day — barely perceptible up close
+  } else if ((hour >= 5 && hour < 8) || (hour >= 17 && hour < 21)) {
+    fogDensity = 0.00014; // dawn / dusk
+  } else {
+    fogDensity = 0.00025; // night — still hides the void in shadow
+  }
 
   if (hour < 5) {
     // Night — bright moonlight, blue-white wash, fully visible

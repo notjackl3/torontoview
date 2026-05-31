@@ -70,47 +70,33 @@ export function createGround(
   projection: { projectToWorld: (coord: [number, number]) => THREE.Vector3 },
   gridSize: number = 4,
 ): THREE.Group {
+  void gridSize; // kept for backwards-compat with callers
   const group = new THREE.Group();
 
-  const latStep = (bbox.maxLat - bbox.minLat) / gridSize;
-  const lngStep = (bbox.maxLng - bbox.minLng) / gridSize;
+  // Single flat plane in a neutral planning-map tone. No polygonOffset (no
+  // co-planar geometry sits on it — parks/water/roads are stacked at distinct
+  // Y heights), no transparency. Keeps the surface clean and the GPU happy.
+  const topLeft = projection.projectToWorld([bbox.minLng, bbox.maxLat]);
+  const bottomRight = projection.projectToWorld([bbox.maxLng, bbox.minLat]);
+  const width = Math.abs(bottomRight.x - topLeft.x);
+  const depth = Math.abs(bottomRight.z - topLeft.z);
+  const centerX = (topLeft.x + bottomRight.x) / 2;
+  const centerZ = (topLeft.z + bottomRight.z) / 2;
 
-  for (let row = 0; row < gridSize; row++) {
-    for (let col = 0; col < gridSize; col++) {
-      const cellMinLat = bbox.minLat + row * latStep;
-      const cellMaxLat = bbox.minLat + (row + 1) * latStep;
-      const cellMinLng = bbox.minLng + col * lngStep;
-      const cellMaxLng = bbox.minLng + (col + 1) * lngStep;
+  const geometry = new THREE.PlaneGeometry(width, depth);
+  geometry.rotateX(-Math.PI / 2);
 
-      const topLeft = projection.projectToWorld([cellMinLng, cellMaxLat]);
-      const bottomRight = projection.projectToWorld([cellMaxLng, cellMinLat]);
+  const material = new THREE.MeshStandardMaterial({
+    color: 0xe8e4dd, // warm neutral — planning-map / architect's plan tone
+    roughness: 1.0,
+    metalness: 0.0,
+  });
 
-      const width = Math.abs(bottomRight.x - topLeft.x);
-      const depth = Math.abs(bottomRight.z - topLeft.z);
-      const centerX = (topLeft.x + bottomRight.x) / 2;
-      const centerZ = (topLeft.z + bottomRight.z) / 2;
-
-      const geometry = new THREE.PlaneGeometry(width, depth);
-      geometry.rotateX(-Math.PI / 2);
-
-      const material = new THREE.MeshStandardMaterial({
-        color: 0xffffff,
-        roughness: 0.9,
-        metalness: 0.0,
-        polygonOffset: true,
-        polygonOffsetFactor: 1,
-        polygonOffsetUnits: 1,
-      });
-
-      const plane = new THREE.Mesh(geometry, material);
-      plane.position.set(centerX, 0, centerZ);
-      plane.receiveShadow = true;
-      plane.name = `ground-tile-${row}-${col}`;
-      // Store sub-bbox so ThreeMap can fetch the right satellite image
-      plane.userData.tileBbox = [cellMinLat, cellMinLng, cellMaxLat, cellMaxLng];
-      group.add(plane);
-    }
-  }
+  const plane = new THREE.Mesh(geometry, material);
+  plane.position.set(centerX, 0, centerZ);
+  plane.receiveShadow = true;
+  plane.name = "ground-plane";
+  group.add(plane);
 
   return group;
 }

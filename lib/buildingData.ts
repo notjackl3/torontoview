@@ -16,6 +16,19 @@ export interface Building {
   roofColor?: string; // CSS hex color for roof
   material?: string; // building:material (brick, stone, glass, etc.)
   levels?: number;
+  /**
+   * Optional triangle-mesh geometry from Toronto's 3D Massing Multipatch
+   * dataset. Present only for buildings that have real 3D surface data
+   * (towers with setbacks, the CN Tower's pod, domes, etc.). When present,
+   * the renderer uses this mesh instead of prism-extruding `footprint`.
+   *
+   * `positions` is a flat array of (lng, lat, z_meters) triplets, with each
+   * consecutive group of 3 triplets forming one triangle. Vertex order is
+   * front-facing (CCW when viewed from outside the building).
+   */
+  mesh?: {
+    positions: number[];
+  };
 }
 
 /**

@@ -36,9 +36,11 @@
     "@types/pbf": "^3.0.5",
     "@types/react": "^19.2.13",
     "@types/react-dom": "^19.2.3",
+    "@types/shapefile": "^0.6.4",
     "@types/three": "^0.160.0",
     "eslint": "^9",
     "eslint-config-next": "16.1.6",
+    "shapefile": "^0.6.6",
     "tailwindcss": "^4",
     "typescript": "5.9.3"
   },

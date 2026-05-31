@@ -46,6 +46,9 @@ model/.next/
 # Map data - keep processed, ignore raw
 public/map-data/*-raw.json
 
+# Script-local caches
+scripts/.*-cache.json
+
 # Large showcase media (exceeds GitHub's 50MB file limit)
 public/showcase/live-map.gif
 public/showcase/shadow-analysis.gif

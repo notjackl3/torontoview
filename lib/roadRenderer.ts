@@ -15,36 +15,48 @@ const SCALE_FACTOR = 10 / 1.4;
  * - 40 km/h → tertiary
  * - 30 km/h → residential
  */
-function getRoadStyle(speedLimit: number, lanes: number): { width: number; color: number } {
-  // Real-world lane widths (meters) vary by road class
+/**
+ * Road style by speed class. Realistic asphalt greys; arterials are a touch
+ * darker (fresher asphalt) and get a white centerline. Residential streets
+ * are lighter / weathered. Reads naturally against the green ground plane.
+ */
+function getRoadStyle(
+  speedLimit: number,
+  lanes: number,
+): {
+  width: number;
+  color: number;
+  centerLine: boolean;
+  centerLineColor: number;
+} {
   let laneWidth: number;
   let shoulder: number;
   let color: number;
+  let centerLine = false;
+  const centerLineColor = 0xf5f1e0; // off-white
 
   if (speedLimit >= 60) {
-    // Primary / arterial
     laneWidth = 3.7;
     shoulder = 1.0;
-    color = 0x2a2a2a;
+    color = 0x555555; // arterial asphalt
+    centerLine = true;
   } else if (speedLimit >= 50) {
-    // Secondary
     laneWidth = 3.5;
     shoulder = 0.5;
-    color = 0x333333;
+    color = 0x666666; // secondary
+    centerLine = true;
   } else if (speedLimit >= 40) {
-    // Tertiary
     laneWidth = 3.3;
     shoulder = 0.3;
-    color = 0x3d3d3d;
+    color = 0x787878; // tertiary
   } else {
-    // Residential
     laneWidth = 3.0;
     shoulder = 0.0;
-    color = 0x484848;
+    color = 0x8a8a8a; // residential, weathered
   }
 
   const totalWidth = (lanes * laneWidth + shoulder * 2) * SCALE_FACTOR;
-  return { width: totalWidth, color };
+  return { width: totalWidth, color, centerLine, centerLineColor };
 }
 
 /**
@@ -64,17 +76,26 @@ export function renderRoads(
       projection.projectToWorld(coord),
     );
 
-    const { width, color } = getRoadStyle(edge.speedLimit, edge.lanes);
+    const { width, color, centerLine, centerLineColor } = getRoadStyle(
+      edge.speedLimit,
+      edge.lanes,
+    );
     const roadMesh = createRoadMesh(points, width, color);
-
-    // Slightly above ground to avoid z-fighting with satellite texture
     roadMesh.position.y = 0.5;
-
     roadMesh.name = `road-${edge.id || "segment"}`;
     roadMesh.userData.isRoad = true;
     roadMesh.userData.roadWidth = width;
-
     scene.add(roadMesh);
+
+    // Warm centerline strip for arterials/secondaries — sits a hair above
+    // the road surface so it shows but doesn't cause z-fighting.
+    if (centerLine) {
+      const stripeWidth = Math.max(width * 0.04, 0.6 * SCALE_FACTOR);
+      const stripe = createRoadMesh(points, stripeWidth, centerLineColor);
+      stripe.position.y = 0.6;
+      stripe.userData.isRoadCenterLine = true;
+      scene.add(stripe);
+    }
   });
 
   console.log("✅ Roads rendered");

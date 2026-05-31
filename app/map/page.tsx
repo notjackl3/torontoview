@@ -1,8 +1,11 @@
 "use client";
 
 import { useState, useEffect, Suspense, useMemo, useRef } from "react";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
+import { peekNextBusinessId, consumeNextBusinessId } from "@/lib/businessIdCounter";
+import { listOsmPlans } from "@/lib/osmBusinessPlans";
+import type { BuildingClusterIndex } from "@/lib/buildingClusters";
 import ThreeMap from "@/components/ThreeMap";
 import { formatHour, getPresetHour, type TimePreset } from "@/lib/sun/timeOfDay";
 import {
@@ -43,6 +46,10 @@ import {
   Users,
   Car,
   Pencil,
+  Trees,
+  Waves,
+  TreePine,
+  Briefcase,
 } from "lucide-react";
 import { prefetchMapData } from "@/lib/prefetchMapData";
 import {
@@ -79,11 +86,16 @@ interface PlacedBuilding {
     startDate?: string;
     durationDays?: number;
   };
+  businessPlanId?: number;
 }
 
 function MapPageContent() {
   const searchParams = useSearchParams();
+  const router = useRouter();
   const [isStreetViewSelectionMode, setIsStreetViewSelectionMode] = useState(false);
+  const [nextBusinessIdPreview, setNextBusinessIdPreview] = useState<number>(1);
+  const [osmClusterIndex, setOsmClusterIndex] = useState<BuildingClusterIndex | null>(null);
+  const [registryRefreshTick, setRegistryRefreshTick] = useState(0);
 
   const [pendingPlacement, setPendingPlacement] = useState<{
     lat: number;
@@ -129,6 +141,9 @@ function MapPageContent() {
   const [mapStyle, setMapStyle] = useState<"satellite" | "light">("satellite");
   const [showNoiseRipple, setShowNoiseRipple] = useState(false);
   const [showZoningLayer, setShowZoningLayer] = useState(false);
+  const [showParksLayer, setShowParksLayer] = useState(false);
+  const [showWaterLayer, setShowWaterLayer] = useState(false);
+  const [showTorontoTreesLayer, setShowTorontoTreesLayer] = useState(false);
   const [showWindLayer, setShowWindLayer] = useState(false);
   const [windData, setWindData] = useState<WindDataSet | null>(null);
   useEffect(() => {
@@ -377,6 +392,26 @@ function MapPageContent() {
   const selectedBuilding = placedBuildings.find(
     (b) => b.id === selectedBuildingId,
   );
+
+  useEffect(() => {
+    if (selectedBuildingId) {
+      setNextBusinessIdPreview(peekNextBusinessId());
+    }
+  }, [selectedBuildingId]);
+
+  const openBusinessPlan = (building: PlacedBuilding) => {
+    const existing = building.businessPlanId;
+    const planId = existing ?? consumeNextBusinessId();
+    if (existing == null) {
+      setPlacedBuildings((prev) =>
+        prev.map((b) =>
+          b.id === building.id ? { ...b, businessPlanId: planId } : b,
+        ),
+      );
+      setNextBusinessIdPreview(peekNextBusinessId());
+    }
+    router.push(`/plan/business-${planId}?buildingId=${building.id}`);
+  };
 
   // Buildings that are under construction (active) at the current timeline date
   const buildingsActiveAtTimeline = useMemo(() => {
@@ -702,6 +737,9 @@ function MapPageContent() {
           timelineDate={timelineDate}
           showNoiseRipple={showNoiseRipple}
           showZoningLayer={showZoningLayer}
+          showParksLayer={showParksLayer}
+          showWaterLayer={showWaterLayer}
+          showTorontoTreesLayer={showTorontoTreesLayer}
           showWindLayer={showWindLayer}
           windData={showWindLayer ? windData : null}
           zoningOffset={zoningOffset}
@@ -721,6 +759,7 @@ function MapPageContent() {
           showProposedBuilding={showProposedBuilding}
           shadowAnalysisRef={shadowAnalysisRef}
           onOsmBuildingsLoaded={(buildings) => { osmBuildingsDataRef.current = buildings; }}
+          onOsmClustersComputed={(idx) => { setOsmClusterIndex(idx); setRegistryRefreshTick((n) => n + 1); }}
           stakeholderImpactAnalysis={(showStakeholderPanel || showImpactColors) ? stakeholderAnalysis : null}
           showTrafficHeatmap={showTrafficImpact}
           trafficImpactResult={showTrafficImpact ? trafficImpactResult : null}
@@ -965,6 +1004,127 @@ function MapPageContent() {
                       type="checkbox"
                       checked={showZoningLayer}
                       onChange={(e) => setShowZoningLayer(e.target.checked)}
+                      onClick={(e) => e.stopPropagation()}
+                      className="accent-accent-blue h-3.5 w-3.5"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Parks toggle */}
+              <div
+                className={`p-2.5 rounded-md border transition-all cursor-pointer group ${
+                  showParksLayer
+                    ? "border-white/15 bg-white/10"
+                    : "border-white/5 hover:border-white/15 bg-white/5"
+                }`}
+                onClick={() => setShowParksLayer(!showParksLayer)}
+              >
+                <div className="flex items-center gap-3">
+                  <div
+                    className={`w-7 h-7 rounded bg-white/5 border border-white/10 flex items-center justify-center transition-colors ${
+                      showParksLayer
+                        ? "text-green-400"
+                        : "text-zinc-500 group-hover:text-green-400"
+                    }`}
+                  >
+                    <Trees size={14} />
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-[11px] font-bold text-zinc-200">
+                      Parks &amp; Green Spaces
+                    </p>
+                    <p className="text-[9px] text-zinc-500">
+                      City of Toronto · Green Spaces dataset
+                    </p>
+                  </div>
+                  <div className="flex items-center">
+                    <input
+                      type="checkbox"
+                      checked={showParksLayer}
+                      onChange={(e) => setShowParksLayer(e.target.checked)}
+                      onClick={(e) => e.stopPropagation()}
+                      className="accent-accent-blue h-3.5 w-3.5"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Water toggle */}
+              <div
+                className={`p-2.5 rounded-md border transition-all cursor-pointer group ${
+                  showWaterLayer
+                    ? "border-white/15 bg-white/10"
+                    : "border-white/5 hover:border-white/15 bg-white/5"
+                }`}
+                onClick={() => setShowWaterLayer(!showWaterLayer)}
+              >
+                <div className="flex items-center gap-3">
+                  <div
+                    className={`w-7 h-7 rounded bg-white/5 border border-white/10 flex items-center justify-center transition-colors ${
+                      showWaterLayer
+                        ? "text-cyan-400"
+                        : "text-zinc-500 group-hover:text-cyan-400"
+                    }`}
+                  >
+                    <Waves size={14} />
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-[11px] font-bold text-zinc-200">
+                      Waterbodies
+                    </p>
+                    <p className="text-[9px] text-zinc-500">
+                      Lake Ontario shoreline · Inland ponds
+                    </p>
+                  </div>
+                  <div className="flex items-center">
+                    <input
+                      type="checkbox"
+                      checked={showWaterLayer}
+                      onChange={(e) => setShowWaterLayer(e.target.checked)}
+                      onClick={(e) => e.stopPropagation()}
+                      className="accent-accent-blue h-3.5 w-3.5"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Street Trees toggle */}
+              <div
+                className={`p-2.5 rounded-md border transition-all cursor-pointer group ${
+                  showTorontoTreesLayer
+                    ? "border-white/15 bg-white/10"
+                    : "border-white/5 hover:border-white/15 bg-white/5"
+                }`}
+                onClick={() =>
+                  setShowTorontoTreesLayer(!showTorontoTreesLayer)
+                }
+              >
+                <div className="flex items-center gap-3">
+                  <div
+                    className={`w-7 h-7 rounded bg-white/5 border border-white/10 flex items-center justify-center transition-colors ${
+                      showTorontoTreesLayer
+                        ? "text-emerald-400"
+                        : "text-zinc-500 group-hover:text-emerald-400"
+                    }`}
+                  >
+                    <TreePine size={14} />
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-[11px] font-bold text-zinc-200">
+                      Street Trees
+                    </p>
+                    <p className="text-[9px] text-zinc-500">
+                      ~6k trees · sized by trunk diameter
+                    </p>
+                  </div>
+                  <div className="flex items-center">
+                    <input
+                      type="checkbox"
+                      checked={showTorontoTreesLayer}
+                      onChange={(e) =>
+                        setShowTorontoTreesLayer(e.target.checked)
+                      }
                       onClick={(e) => e.stopPropagation()}
                       className="accent-accent-blue h-3.5 w-3.5"
                     />
@@ -1742,15 +1902,34 @@ function MapPageContent() {
                                   : `X: ${building.position.x.toFixed(1)}m, Z: ${building.position.z.toFixed(1)}m`}
                               </p>
                             </div>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                removeBuilding(building.id);
-                              }}
-                              className="p-1 hover:bg-red-500/20 rounded transition-colors text-zinc-400 hover:text-red-400"
-                            >
-                              <Trash2 size={12} />
-                            </button>
+                            <div className="flex items-center gap-1">
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  openBusinessPlan(building);
+                                }}
+                                title={
+                                  building.businessPlanId != null
+                                    ? `Open business plan #${building.businessPlanId}`
+                                    : `Add business plan #${nextBusinessIdPreview}`
+                                }
+                                className="flex items-center gap-1 px-1.5 py-1 rounded bg-emerald-500/15 hover:bg-emerald-500/30 text-emerald-300 hover:text-emerald-200 transition-colors"
+                              >
+                                <Briefcase size={11} />
+                                <span className="text-[9px] font-mono font-bold">
+                                  #{building.businessPlanId ?? nextBusinessIdPreview}
+                                </span>
+                              </button>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  removeBuilding(building.id);
+                                }}
+                                className="p-1 hover:bg-red-500/20 rounded transition-colors text-zinc-400 hover:text-red-400"
+                              >
+                                <Trash2 size={12} />
+                              </button>
+                            </div>
                           </div>
                         ))}
                       </div>
@@ -1758,6 +1937,102 @@ function MapPageContent() {
                   </div>
                 </div>
               </div>
+
+              {/* Business Plans Registry */}
+              {(() => {
+                const osmPlans = registryRefreshTick >= 0 ? listOsmPlans() : [];
+                const hasAny = osmPlans.length > 0 || placedBuildings.some((b) => b.businessPlanId != null);
+                if (!hasAny) return null;
+                return (
+                  <div className="pt-6 mt-6 border-t border-white/10">
+                    <h3 className="ui-label text-emerald-400 mb-3">
+                      Business Plans ({osmPlans.length + placedBuildings.filter((b) => b.businessPlanId != null).length})
+                    </h3>
+                    <div className="space-y-1.5 max-h-48 overflow-y-auto custom-scrollbar">
+                      {/* Placed-building plans */}
+                      {placedBuildings
+                        .filter((b) => b.businessPlanId != null)
+                        .map((b) => (
+                          <div
+                            key={`placed-${b.id}`}
+                            className="flex items-center gap-2 rounded p-2 border border-white/10 bg-white/5 hover:border-emerald-400/30 transition-colors"
+                          >
+                            <div className="flex-1 min-w-0">
+                              <p className="text-[10px] font-bold text-zinc-200 truncate">
+                                Plan #{b.businessPlanId} · Placed
+                              </p>
+                              <p className="text-[8px] text-zinc-500 truncate">
+                                {b.lat.toFixed(5)}°, {b.lng.toFixed(5)}°
+                              </p>
+                            </div>
+                            <button
+                              onClick={() =>
+                                setFlyToTarget({ lngLat: [b.lng, b.lat], id: Date.now() })
+                              }
+                              title="Go to building"
+                              className="p-1 rounded hover:bg-blue-500/20 text-blue-300 transition-colors"
+                            >
+                              <MapPin size={11} />
+                            </button>
+                            <button
+                              onClick={() =>
+                                router.push(`/plan/business-${b.businessPlanId}?buildingId=${b.id}`)
+                              }
+                              title="Open business plan"
+                              className="p-1 rounded hover:bg-emerald-500/20 text-emerald-300 transition-colors"
+                            >
+                              <Briefcase size={11} />
+                            </button>
+                          </div>
+                        ))}
+                      {/* OSM-cluster plans */}
+                      {osmPlans.map((entry) => {
+                        const cluster = osmClusterIndex?.clusterById.get(entry.osmBuildingId);
+                        const lngLat = cluster?.center;
+                        const partsLabel = cluster && cluster.buildingIds.length > 1
+                          ? ` · ${cluster.buildingIds.length} parts`
+                          : "";
+                        return (
+                          <div
+                            key={`osm-${entry.osmBuildingId}`}
+                            className="flex items-center gap-2 rounded p-2 border border-white/10 bg-white/5 hover:border-emerald-400/30 transition-colors"
+                          >
+                            <div className="flex-1 min-w-0">
+                              <p className="text-[10px] font-bold text-zinc-200 truncate">
+                                Plan #{entry.planId} · Existing{partsLabel}
+                              </p>
+                              <p className="text-[8px] text-zinc-500 truncate">
+                                {lngLat
+                                  ? `${lngLat[1].toFixed(5)}°, ${lngLat[0].toFixed(5)}°`
+                                  : entry.osmBuildingId}
+                              </p>
+                            </div>
+                            <button
+                              onClick={() =>
+                                lngLat && setFlyToTarget({ lngLat, id: Date.now() })
+                              }
+                              disabled={!lngLat}
+                              title="Go to building"
+                              className="p-1 rounded hover:bg-blue-500/20 text-blue-300 disabled:opacity-30 transition-colors"
+                            >
+                              <MapPin size={11} />
+                            </button>
+                            <button
+                              onClick={() =>
+                                router.push(`/plan/business-${entry.planId}?osmBuildingId=${encodeURIComponent(entry.osmBuildingId)}`)
+                              }
+                              title="Open business plan"
+                              className="p-1 rounded hover:bg-emerald-500/20 text-emerald-300 transition-colors"
+                            >
+                              <Briefcase size={11} />
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* Selected Building Transform Controls */}
               {selectedBuilding && (
@@ -2190,8 +2465,26 @@ function MapPageContent() {
                       </div>
                     </div>
 
-                    {/* Delete button */}
+                    {/* Add / open business plan */}
                     <div className="pt-2 border-t border-blue-200">
+                      <button
+                        onClick={() => openBusinessPlan(selectedBuilding)}
+                        className="w-full flex items-center justify-between gap-2 px-3 py-2 mb-2 rounded text-[10px] font-bold uppercase tracking-tight transition-all bg-emerald-600 hover:bg-emerald-500 text-white shadow-sm"
+                      >
+                        <span className="flex items-center gap-2">
+                          <Briefcase size={12} />
+                          {selectedBuilding.businessPlanId != null
+                            ? "Open business plan"
+                            : "Add business plan"}
+                        </span>
+                        <span className="font-mono opacity-80">
+                          #{selectedBuilding.businessPlanId ?? nextBusinessIdPreview}
+                        </span>
+                      </button>
+                    </div>
+
+                    {/* Delete button */}
+                    <div className="pt-2">
                       <button
                         onClick={() => removeBuilding(selectedBuilding.id)}
                         className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-red-50 border border-red-200 hover:bg-red-100 rounded text-[10px] font-bold text-red-700 transition-colors uppercase"

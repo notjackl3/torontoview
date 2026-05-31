@@ -47,6 +47,13 @@ function createBuildingGroup(
   building: Building,
   projection: typeof CityProjection,
 ): THREE.Group | null {
+  // If the importer attached a real triangle mesh (Multipatch dataset),
+  // render that directly — it captures setbacks, the CN Tower's pod, domes,
+  // and other geometry the prism extrusion can't.
+  if (building.mesh && building.mesh.positions.length >= 9) {
+    return createMeshBuildingGroup(building, projection);
+  }
+
   if (building.footprint.length < 3) return null;
 
   // Project footprint to world space
@@ -119,6 +126,58 @@ function createBuildingGroup(
     height: building.height,
   };
 
+  return group;
+}
+
+/**
+ * Build a Group for a building whose geometry comes from the Multipatch
+ * dataset (real 3D triangle mesh).
+ *
+ * Input `mesh.positions` is a flat array of (lng, lat, z_meters) triplets;
+ * every consecutive 3 triplets = 1 triangle. We project each (lng, lat) to
+ * world space and scale z_meters by SCALE_FACTOR to match the rest of the
+ * scene.
+ */
+function createMeshBuildingGroup(
+  building: Building,
+  projection: typeof CityProjection,
+): THREE.Group {
+  const src = building.mesh!.positions;
+  const vertexCount = src.length / 3;
+  const positions = new Float32Array(vertexCount * 3);
+  for (let i = 0, j = 0; i < src.length; i += 3, j += 3) {
+    const world = projection.projectToWorld([src[i], src[i + 1]]);
+    positions[j] = world.x;
+    positions[j + 1] = src[i + 2] * SCALE_FACTOR * HEIGHT_MULTIPLIER;
+    positions[j + 2] = world.z;
+  }
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+  geometry.computeVertexNormals();
+
+  const wallColor = getWallColor(building);
+  const material = new THREE.MeshStandardMaterial({
+    color: wallColor,
+    roughness: 0.85,
+    metalness: 0.05,
+    side: THREE.DoubleSide, // Multipatch winding is inconsistent — both sides
+  });
+
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+
+  const group = new THREE.Group();
+  group.add(mesh);
+  group.name = building.id;
+  group.userData = {
+    buildingId: building.id,
+    isOsmBuilding: true,
+    type: building.type,
+    height: building.height,
+    isMultipatch: true,
+  };
   return group;
 }
 
