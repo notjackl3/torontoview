@@ -13,7 +13,7 @@ TorontoView is a real-time, voice-driven urban planning simulator built on top o
 The platform combines three core technologies into a single interactive experience:
 
 - **ElevenLabs** provides the voice and audio layer -- real-time narration of building designs, AI-generated sound effects for every editor action, and spoken feedback that makes the tool accessible to users who cannot or prefer not to read dense technical output.
-- **Google Gemini 2.5 Flash** serves as the reasoning engine -- interpreting freeform speech, resolving ambiguity, generating structured building parameters, producing environmental impact reports, and recommending tree species from Toronto's municipal database.
+- **Local Qwen/Gemma models** hosted through an OpenAI-compatible endpoint serve as the reasoning engine -- interpreting freeform speech, resolving ambiguity, generating structured building parameters, producing environmental impact reports, and recommending tree species from Toronto's municipal database.
 - **Three.js and React Three Fiber** power a full 3D simulation of Toronto with over 100 vehicles, real traffic signals, A* pathfinding, construction noise propagation, and zoning overlays.
 
 The result is a platform where anyone -- regardless of technical skill, visual ability, or planning expertise -- can participate in shaping their city.
@@ -35,8 +35,8 @@ The result is a platform where anyone -- regardless of technical skill, visual a
 4. **Hear the sounds** -- Every action in the editor (adding floors, resizing, rotating, placing windows) triggers an AI-generated sound effect created by ElevenLabs.
 5. **Open the Map** -- Place your building on Toronto's live 3D map.
 6. **Zoom into a street** -- Scroll in close to street level and hear an AI-generated metropolitan city ambiance produced by ElevenLabs in real time. The volume fades smoothly based on how close you are to the ground.
-7. **Generate an Environmental Report** -- See carbon footprint, noise levels, habitat impact, and community effects analyzed by Gemini.
-8. **Ask the Tree Advisor** -- Get tree recommendations from Toronto's official planting program, powered by Gemini.
+7. **Generate an Environmental Report** -- See carbon footprint, noise levels, habitat impact, and community effects analyzed by a local model.
+8. **Ask the Tree Advisor** -- Get tree recommendations from Toronto's official planting program, powered by a local model.
 
 ---
 
@@ -45,7 +45,7 @@ The result is a platform where anyone -- regardless of technical skill, visual a
 TorontoView makes urban planning conversational, audible, and visual -- all at once.
 
 1. The user speaks a building description (e.g., *"A 3-story brick building with round windows"*)
-2. Gemini interprets the request and generates a structured JSON configuration
+2. A local Qwen/Gemma model interprets the request and generates a structured JSON configuration
 3. The configuration is validated against a Zod schema with automatic retry on failure
 4. The 3D building renders instantly in the editor
 5. ElevenLabs narrates a spoken confirmation of what was built
@@ -58,18 +58,18 @@ Non-technical users, seniors, and visually impaired users can participate in cit
 ## 4. Architecture
 
 ```
-Voice Input → Web Speech API → /api/design → Gemini 2.5 Flash (parse + validate)
-                                                      ↓
+Voice Input -> Web Speech API -> /api/design -> Local LLM (parse + validate)
+                                                      v
                                               3D Building Editor (Three.js)
                                               + ElevenLabs Sound Effects (9 AI-generated sounds)
-                                                      ↓
-                                              /api/speak → ElevenLabs TTS (spoken confirmation)
-                                                      ↓
+                                                      v
+                                              /api/speak -> ElevenLabs TTS (spoken confirmation)
+                                                      v
                                               3D Toronto Map (100+ vehicles, traffic, zoning)
-                                              + /api/street-sound → ElevenLabs Sound Gen (city ambiance on zoom)
-                                                      ↓
-                              /api/environmental-report → Gemini (carbon, noise, habitat, community)
-                              /api/tree-advisor → Gemini (40+ Toronto tree species, planting advice)
+                                              + /api/street-sound -> ElevenLabs Sound Gen (city ambiance on zoom)
+                                                      v
+                              /api/environmental-report -> Local LLM (carbon, noise, habitat, community)
+                              /api/tree-advisor -> Local LLM (40+ Toronto tree species, planting advice)
 ```
 
 ---
@@ -82,7 +82,7 @@ ElevenLabs is not a cosmetic addition to TorontoView. It is a core layer of the 
 
 When a user designs a building by voice, TorontoView does not simply display the result on screen. It speaks the result back.
 
-After Gemini generates a building configuration, a one-sentence confirmation is sent to the ElevenLabs Text-to-Speech API via the `/api/speak` endpoint. The confirmation is streamed as MP3 audio and played immediately in the browser.
+After the local model generates a building configuration, a one-sentence confirmation is sent to the ElevenLabs Text-to-Speech API via the `/api/speak` endpoint. The confirmation is streamed as MP3 audio and played immediately in the browser.
 
 This voice feedback serves several critical purposes:
 
@@ -137,13 +137,13 @@ This creates an immersive experience where zooming into Toronto's streets feels 
 
 ---
 
-## 6. Gemini Integration
+## 6. Local Model Integration
 
-Google Gemini 2.5 Flash is the reasoning engine behind three core features.
+TorontoView uses a local OpenAI-compatible model endpoint for three core features. In development this can be Qwen, Gemma, vLLM, NIM, or any compatible server configured with `LOCAL_LLM_BASE_URL` and `LOCAL_LLM_MODEL`.
 
 ### 6.1 Voice Design Parser (`/api/design`)
 
-Converts natural language like *"Make me a tall glass building with round windows"* into a structured building configuration (floors, dimensions, materials, roof, windows, color). Gemini resolves ambiguity -- *"tall"* becomes 8 floors, *"glass"* maps to both texture and wall color, *"round windows"* resolves to the `circular` enum. Output is validated against a Zod schema with up to 3 automatic retries. Supports incremental editing: *"Make it taller"* updates only the relevant fields.
+Converts natural language like *"Make me a tall glass building with round windows"* into a structured building configuration (floors, dimensions, materials, roof, windows, color). The local model resolves ambiguity -- *"tall"* becomes 8 floors, *"glass"* maps to both texture and wall color, *"round windows"* resolves to the `circular` enum. Output is validated against a Zod schema with up to 3 automatic retries. Supports incremental editing: *"Make it taller"* updates only the relevant fields.
 
 ### 6.2 Environmental Impact Report (`/api/environmental-report`)
 
@@ -178,7 +178,7 @@ This serves **visually impaired users**, **seniors**, **non-native English speak
 |-------|------------|
 | Frontend | Next.js 16, React 19, TypeScript, Tailwind CSS, Framer Motion |
 | 3D Engine | Three.js, React Three Fiber, Drei |
-| AI Reasoning | Google Gemini 2.5 Flash (voice design, environmental report, tree advisor) |
+| AI Reasoning | Local Qwen/Gemma model through an OpenAI-compatible API (voice design, environmental report, tree advisor) |
 | Voice and Sound | ElevenLabs Text-to-Speech API, ElevenLabs Sound Generation API (editor effects + real-time street ambiance), Web Speech API |
 | Validation | Zod (schema validation with retry) |
 | Geospatial | Turf.js, OpenStreetMap data, lat/lng projection |
@@ -195,10 +195,12 @@ git clone https://github.com/Lemirq/nvidia-spark-hackathon.git && cd nvidia-spar
 npm install
 ```
 
-Add API keys to `.env.local`:
+Add model and API settings to `.env.local`:
 
 ```env
-GEMINI_API_KEY=your_gemini_api_key
+LOCAL_LLM_BASE_URL=http://127.0.0.1:8000/v1
+LOCAL_LLM_MODEL=unsloth/Qwen3.6-35B-A3B-GGUF
+# LOCAL_LLM_API_KEY=optional_if_your_local_gateway_requires_auth
 ELEVENLABS_API_KEY=your_elevenlabs_api_key
 ```
 
