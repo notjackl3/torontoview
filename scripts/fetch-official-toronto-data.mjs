@@ -9,6 +9,32 @@ const MAX_BYTES = Number(process.env.TORONTO_DATA_MAX_BYTES || 80 * 1024 * 1024)
 
 const DATASETS = [
   {
+    group: "population",
+    package: "neighbourhood-profiles",
+    resources: [
+      "neighbourhood-profiles-2021-158-model",
+      "neighbourhood-profiles-2016-140-model",
+      "neighbourhood-profiles-2011-140-model",
+    ],
+  },
+  {
+    group: "population",
+    package: "wellbeing-toronto-demographics",
+    resources: [
+      "wellbeing-toronto-population-total-2011-2016-and-age-groups-2016",
+      "wellbeing-toronto-demographics",
+    ],
+  },
+  {
+    group: "population",
+    package: "ward-profiles-25-ward-model",
+    resources: [
+      "2023-WardProfiles-2011-2021-CensusData",
+      "2023-WardProfiles-GeographicAreas",
+      "25-WardNames-Numbers",
+    ],
+  },
+  {
     group: "building-regulations",
     package: "building-permits-active-permits",
     prefer: ["CSV", "JSON"],
@@ -73,6 +99,62 @@ const DATASETS = [
     package: "imagination-manufacturing-innovation-and-technology-imit-program-recipients",
     prefer: ["CSV", "JSON"],
   },
+  {
+    group: "lot-business-history",
+    package: "municipal-licensing-and-standards-business-licences-and-permits",
+    resources: ["Business licences data", "Business licences data.csv", "business-licence-readme"],
+  },
+  {
+    group: "lot-business-history",
+    package: "municipal-licensing-and-standards-business-licence-renewals-and-new-issues-summary",
+    resources: [
+      "mls-business-licence-renewals-and-new-issues-data",
+      "mls-business-licence-renewals-and-new-issues-readme",
+    ],
+  },
+  {
+    group: "commercial-recreation-hotspots",
+    package: "toronto-employment-survey-summary-tables",
+    resources: [
+      "Toronto employment survey summary tables 2025",
+      "Toronto employment survey summary tables 2024",
+      "Toronto employment survey summary tables 2020",
+    ],
+  },
+  {
+    group: "commercial-recreation-hotspots",
+    package: "business-improvement-areas",
+    resources: ["Business Improvement Areas Data", "Business Improvement Areas Data - 4326.geojson"],
+  },
+  {
+    group: "commercial-recreation-hotspots",
+    package: "places-of-interest-and-toronto-attractions",
+    resources: ["Places of Interest and Attractions", "Places of Interest and Attractions - 4326.geojson"],
+  },
+  {
+    group: "commercial-recreation-hotspots",
+    package: "parks-and-recreation-facilities",
+    resources: ["Parks and Recreation Facilities", "Parks and Recreation Facilities - 4326.geojson"],
+  },
+  {
+    group: "commercial-recreation-hotspots",
+    package: "wellbeing-toronto-recreation",
+    prefer: ["XLSX"],
+  },
+  {
+    group: "commercial-recreation-hotspots",
+    package: "recreational-courses-historical-data",
+    prefer: ["XLSX"],
+  },
+  {
+    group: "commercial-recreation-hotspots",
+    package: "recreational-drop-in-programs",
+    resources: [
+      "leisure-skating-drop-in-location-wgs84",
+      "leisure-swimming-drop-in-location-wgs84",
+      "aquafit-drop-in-location-wgs84",
+    ],
+  },
 ];
 
 const OFFICIAL_PAGES = [
@@ -100,6 +182,21 @@ const OFFICIAL_PAGES = [
     group: "business-bursaries",
     title: "City of Toronto business support",
     url: "https://www.toronto.ca/business-economy/business-operation-growth/business-support/",
+  },
+  {
+    group: "lot-business-history",
+    title: "City of Toronto business licences and permits",
+    url: "https://www.toronto.ca/services-payments/permits-licences-bylaws/",
+  },
+  {
+    group: "commercial-recreation-hotspots",
+    title: "City of Toronto business improvement areas",
+    url: "https://www.toronto.ca/business-economy/business-operation-growth/business-improvement-areas/",
+  },
+  {
+    group: "commercial-recreation-hotspots",
+    title: "City of Toronto parks and recreation",
+    url: "https://www.toronto.ca/explore-enjoy/recreation/",
   },
   {
     group: "civil-infrastructure",
