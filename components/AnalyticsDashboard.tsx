@@ -1,10 +1,24 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
-  TrafficAnalytics,
+  Activity,
+  BarChart3,
+  Building2,
+  Car,
+  Clock3,
+  Download,
+  DollarSign,
+  Gauge,
+  Route,
+  ShieldAlert,
+  TrendingUp,
+  X,
+} from "lucide-react";
+import {
   AnalyticsSnapshot,
   IntersectionMetrics,
+  TrafficAnalytics,
 } from "@/lib/analytics";
 
 interface AnalyticsDashboardProps {
@@ -12,6 +26,20 @@ interface AnalyticsDashboardProps {
   visible: boolean;
   onClose: () => void;
 }
+
+type DashboardTab =
+  | "overview"
+  | "economy"
+  | "traffic"
+  | "intersections"
+  | "safety"
+  | "performance";
+
+const currency = new Intl.NumberFormat("en-CA", {
+  style: "currency",
+  currency: "CAD",
+  maximumFractionDigits: 0,
+});
 
 export default function AnalyticsDashboard({
   analytics,
@@ -21,9 +49,7 @@ export default function AnalyticsDashboard({
   const [currentSnapshot, setCurrentSnapshot] =
     useState<AnalyticsSnapshot | null>(null);
   const [history, setHistory] = useState<AnalyticsSnapshot[]>([]);
-  const [selectedTab, setSelectedTab] = useState<
-    "overview" | "performance" | "traffic" | "intersections" | "safety"
-  >("overview");
+  const [selectedTab, setSelectedTab] = useState<DashboardTab>("overview");
 
   useEffect(() => {
     if (!analytics || !visible) return;
@@ -39,101 +65,166 @@ export default function AnalyticsDashboard({
     return () => clearInterval(interval);
   }, [analytics, visible]);
 
+  const economicModel = useMemo(
+    () => (currentSnapshot ? buildEconomicModel(currentSnapshot) : null),
+    [currentSnapshot],
+  );
+
   if (!visible) return null;
 
   const handleExportCSV = () => {
     if (analytics) {
       analytics.downloadCSV(
-        `traffic-analytics-${new Date().toISOString().split("T")[0]}.csv`
+        `torontoview-economic-dashboard-${new Date().toISOString().split("T")[0]}.csv`,
       );
     }
   };
 
   const renderOverview = () => {
-    if (!currentSnapshot) return null;
-    const { performance, traffic } = currentSnapshot;
+    if (!currentSnapshot || !economicModel) return <EmptyState />;
+    const { traffic } = currentSnapshot;
 
     return (
-      <div className="space-y-6">
-        {/* Key Metrics Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="space-y-5">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
           <MetricCard
-            title="FPS"
-            value={performance.fps}
-            unit=""
-            color="text-green-500"
-            trend={getTrend(history.map((s) => s.performance.fps))}
+            icon={<DollarSign size={17} />}
+            label="Local spend capacity"
+            value={currency.format(economicModel.hourlySpendCapacity)}
+            meta="Hourly access proxy"
+            tone="emerald"
+            trend={getTrend(history.map((s) => buildEconomicModel(s).hourlySpendCapacity))}
           />
           <MetricCard
-            title="Active Vehicles"
-            value={traffic.vehicleCount}
-            unit=""
-            color="text-blue-500"
-            trend={getTrend(history.map((s) => s.traffic.vehicleCount))}
+            icon={<Building2 size={17} />}
+            label="Market access"
+            value={`${economicModel.marketAccessScore}/100`}
+            meta={`${traffic.vehicleCount} active trips`}
+            tone="blue"
+            trend={getTrend(history.map((s) => buildEconomicModel(s).marketAccessScore))}
           />
           <MetricCard
-            title="Avg Speed"
+            icon={<Gauge size={17} />}
+            label="Network speed"
             value={traffic.averageSpeed.toFixed(1)}
             unit="km/h"
-            color="text-purple-500"
+            meta="Customer + staff mobility"
+            tone="amber"
             trend={getTrend(history.map((s) => s.traffic.averageSpeed))}
           />
           <MetricCard
-            title="Near Misses"
+            icon={<ShieldAlert size={17} />}
+            label="Safety friction"
             value={currentSnapshot.nearMisses.length}
             unit="/s"
-            color="text-red-500"
-            trend={getTrend(
-              history.map((s) => s.nearMisses.length)
-            )}
+            meta="Near-miss signal"
+            tone="rose"
+            trend={getTrend(history.map((s) => s.nearMisses.length))}
           />
         </div>
 
-        {/* Charts */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <ChartCard title="FPS Over Time">
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1.1fr_0.9fr]">
+          <ChartCard
+            eyebrow="Economic throughput"
+            title="Access Flow Trend"
+            subtitle="Combines vehicle flow and average speed into a local commerce access proxy."
+          >
             <MiniChart
-              data={history.slice(-60).map((s) => s.performance.fps)}
-              max={60}
-              color="rgb(34, 197, 94)"
+              data={history.slice(-90).map((s) => buildEconomicModel(s).accessFlow)}
+              max={Math.max(1, ...history.slice(-90).map((s) => buildEconomicModel(s).accessFlow))}
+              color="#047857"
             />
           </ChartCard>
-          <ChartCard title="Vehicle Count Over Time">
-            <MiniChart
-              data={history.slice(-60).map((s) => s.traffic.vehicleCount)}
-              max={50}
-              color="rgb(59, 130, 246)"
-            />
-          </ChartCard>
+
+          <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-[10px] font-bold uppercase text-slate-500">
+                  Board readout
+                </p>
+                <h3 className="mt-1 text-base font-black text-slate-950">
+                  Economic operating posture
+                </h3>
+              </div>
+              <span className="rounded bg-emerald-50 px-2 py-1 text-[10px] font-black uppercase text-emerald-700">
+                Live model
+              </span>
+            </div>
+            <div className="mt-4 grid grid-cols-2 gap-3">
+              <Readout label="Freight share" value={`${economicModel.freightShare}%`} />
+              <Readout label="Delay exposure" value={currency.format(economicModel.delayCostProxy)} />
+              <Readout label="Retail reach" value={`${economicModel.retailReachScore}/100`} />
+              <Readout label="Operational risk" value={economicModel.riskBand} />
+            </div>
+          </div>
         </div>
 
-        {/* Vehicle Type Distribution */}
-        <div className="bg-gray-800 rounded-lg p-4">
-          <h3 className="text-lg font-semibold mb-3">Vehicle Distribution</h3>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <VehicleTypeBar
-              type="Sedans"
-              count={traffic.vehiclesByType.sedan}
-              total={traffic.vehicleCount}
-              color="bg-blue-500"
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
+          <VehicleTypeBar type="Sedans" count={traffic.vehiclesByType.sedan} total={traffic.vehicleCount} color="bg-sky-600" />
+          <VehicleTypeBar type="SUVs" count={traffic.vehiclesByType.suv} total={traffic.vehicleCount} color="bg-emerald-600" />
+          <VehicleTypeBar type="Trucks" count={traffic.vehiclesByType.truck} total={traffic.vehicleCount} color="bg-amber-600" />
+          <VehicleTypeBar type="Compacts" count={traffic.vehiclesByType.compact} total={traffic.vehicleCount} color="bg-violet-600" />
+        </div>
+      </div>
+    );
+  };
+
+  const renderEconomy = () => {
+    if (!currentSnapshot || !economicModel) return <EmptyState />;
+
+    return (
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[0.9fr_1.1fr]">
+        <div className="space-y-3">
+          <MetricCard
+            icon={<TrendingUp size={17} />}
+            label="Daily spend potential"
+            value={currency.format(economicModel.dailySpendPotential)}
+            meta="12-hour operating window proxy"
+            tone="emerald"
+          />
+          <MetricCard
+            icon={<Clock3 size={17} />}
+            label="Delay cost proxy"
+            value={currency.format(economicModel.delayCostProxy)}
+            meta="Delay-sensitive operating loss signal"
+            tone="rose"
+          />
+          <MetricCard
+            icon={<Route size={17} />}
+            label="Commercial mobility"
+            value={`${economicModel.commercialMobilityScore}/100`}
+            meta="Trips, speed, freight balance"
+            tone="blue"
+          />
+        </div>
+
+        <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+          <p className="text-[10px] font-bold uppercase text-slate-500">
+            Business viability signals
+          </p>
+          <h3 className="mt-1 text-lg font-black text-slate-950">
+            Area economy pulse
+          </h3>
+          <div className="mt-5 space-y-4">
+            <EconomicSignal
+              label="Customer access"
+              value={economicModel.marketAccessScore}
+              detail="Higher when traffic is moving and active trip volume is healthy."
             />
-            <VehicleTypeBar
-              type="SUVs"
-              count={traffic.vehiclesByType.suv}
-              total={traffic.vehicleCount}
-              color="bg-green-500"
+            <EconomicSignal
+              label="Retail reach"
+              value={economicModel.retailReachScore}
+              detail="Proxy for nearby demand exposure around the simulated corridor."
             />
-            <VehicleTypeBar
-              type="Trucks"
-              count={traffic.vehiclesByType.truck}
-              total={traffic.vehicleCount}
-              color="bg-yellow-500"
+            <EconomicSignal
+              label="Logistics fit"
+              value={economicModel.logisticsFitScore}
+              detail="Uses truck mix and speed stability to flag delivery readiness."
             />
-            <VehicleTypeBar
-              type="Compacts"
-              count={traffic.vehiclesByType.compact}
-              total={traffic.vehicleCount}
-              color="bg-purple-500"
+            <EconomicSignal
+              label="Safety confidence"
+              value={economicModel.safetyConfidenceScore}
+              detail="Reduced by near-miss frequency and intersection queue pressure."
             />
           </div>
         </div>
@@ -142,112 +233,68 @@ export default function AnalyticsDashboard({
   };
 
   const renderPerformance = () => {
-    if (!currentSnapshot) return null;
+    if (!currentSnapshot) return <EmptyState />;
     const { performance } = currentSnapshot;
 
     return (
-      <div className="space-y-6">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <MetricCard
-            title="Frame Time"
-            value={performance.frameTime.toFixed(2)}
-            unit="ms"
-            color="text-cyan-500"
-          />
-          <MetricCard
-            title="Update Time"
-            value={performance.updateTime.toFixed(2)}
-            unit="ms"
-            color="text-indigo-500"
-          />
-          <MetricCard
-            title="Render Time"
-            value={performance.renderTime.toFixed(2)}
-            unit="ms"
-            color="text-pink-500"
-          />
+      <div className="space-y-5">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+          <MetricCard icon={<Activity size={17} />} label="FPS" value={performance.fps} meta="Rendering health" tone="emerald" />
+          <MetricCard icon={<Clock3 size={17} />} label="Frame time" value={performance.frameTime.toFixed(2)} unit="ms" meta="Frame budget" tone="blue" />
+          <MetricCard icon={<BarChart3 size={17} />} label="Render time" value={performance.renderTime.toFixed(2)} unit="ms" meta="GPU draw signal" tone="amber" />
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <ChartCard title="Frame Time History">
-            <MiniChart
-              data={history.slice(-60).map((s) => s.performance.frameTime)}
-              max={33.33}
-              color="rgb(6, 182, 212)"
-            />
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <ChartCard eyebrow="System" title="Frame Time History">
+            <MiniChart data={history.slice(-60).map((s) => s.performance.frameTime)} max={33.33} color="#2563eb" />
           </ChartCard>
-          <ChartCard title="Update Time History">
-            <MiniChart
-              data={history.slice(-60).map((s) => s.performance.updateTime)}
-              max={16.67}
-              color="rgb(99, 102, 241)"
-            />
+          <ChartCard eyebrow="System" title="Update Time History">
+            <MiniChart data={history.slice(-60).map((s) => s.performance.updateTime)} max={16.67} color="#d97706" />
           </ChartCard>
         </div>
-
-        {performance.memoryUsage && (
-          <div className="bg-gray-800 rounded-lg p-4">
-            <h3 className="text-lg font-semibold mb-3">Memory Usage</h3>
-            <div className="text-3xl font-bold text-orange-500">
-              {performance.memoryUsage.toFixed(0)} MB
-            </div>
-          </div>
-        )}
       </div>
     );
   };
 
   const renderTraffic = () => {
-    if (!currentSnapshot) return null;
+    if (!currentSnapshot) return <EmptyState />;
     const { traffic } = currentSnapshot;
 
     return (
-      <div className="space-y-6">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="space-y-5">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+          <MetricCard icon={<Car size={17} />} label="Total spawned" value={traffic.totalVehiclesSpawned} meta="Trips entering model" tone="emerald" />
+          <MetricCard icon={<Route size={17} />} label="Total cleared" value={traffic.totalVehiclesDespawned} meta="Trips completed" tone="blue" />
           <MetricCard
-            title="Total Spawned"
-            value={traffic.totalVehiclesSpawned}
-            unit=""
-            color="text-green-500"
-          />
-          <MetricCard
-            title="Total Despawned"
-            value={traffic.totalVehiclesDespawned}
-            unit=""
-            color="text-red-500"
-          />
-          <MetricCard
-            title="Net Change"
-            value={
-              traffic.totalVehiclesSpawned - traffic.totalVehiclesDespawned
-            }
-            unit=""
-            color="text-yellow-500"
+            icon={<TrendingUp size={17} />}
+            label="Net flow"
+            value={traffic.totalVehiclesSpawned - traffic.totalVehiclesDespawned}
+            meta="System accumulation"
+            tone="amber"
           />
         </div>
 
-        <ChartCard title="Average Speed Over Time">
-          <MiniChart
-            data={history.slice(-60).map((s) => s.traffic.averageSpeed)}
-            max={60}
-            color="rgb(168, 85, 247)"
-          />
+        <ChartCard eyebrow="Mobility" title="Average Speed Over Time">
+          <MiniChart data={history.slice(-60).map((s) => s.traffic.averageSpeed)} max={60} color="#047857" />
         </ChartCard>
 
-        <div className="bg-gray-800 rounded-lg p-4">
-          <h3 className="text-lg font-semibold mb-3">Speed Distribution</h3>
-          <div className="text-sm text-gray-400">
-            Current Average: {traffic.averageSpeed.toFixed(1)} km/h
+        <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-[10px] font-bold uppercase text-slate-500">
+                Corridor speed
+              </p>
+              <h3 className="text-base font-black text-slate-950">
+                {traffic.averageSpeed.toFixed(1)} km/h average
+              </h3>
+            </div>
+            <span className="text-[11px] font-bold text-slate-500">0-60 km/h</span>
           </div>
-          <div className="mt-4 h-2 bg-gray-700 rounded-full overflow-hidden">
+          <div className="mt-4 h-2 overflow-hidden rounded-sm bg-slate-100">
             <div
-              className="h-full bg-gradient-to-r from-red-500 via-yellow-500 to-green-500"
-              style={{ width: `${(traffic.averageSpeed / 60) * 100}%` }}
+              className="h-full bg-gradient-to-r from-rose-600 via-amber-500 to-emerald-600"
+              style={{ width: `${Math.min(100, (traffic.averageSpeed / 60) * 100)}%` }}
             />
-          </div>
-          <div className="flex justify-between text-xs text-gray-500 mt-1">
-            <span>0 km/h</span>
-            <span>60 km/h</span>
           </div>
         </div>
       </div>
@@ -255,20 +302,15 @@ export default function AnalyticsDashboard({
   };
 
   const renderIntersections = () => {
-    if (!currentSnapshot) return null;
+    if (!currentSnapshot) return <EmptyState />;
 
     return (
-      <div className="space-y-4">
+      <div className="space-y-3">
         {currentSnapshot.intersections.length === 0 ? (
-          <div className="bg-gray-800 rounded-lg p-8 text-center text-gray-400">
-            No intersection data available
-          </div>
+          <EmptyState title="No intersection data available" />
         ) : (
           currentSnapshot.intersections.map((intersection) => (
-            <IntersectionCard
-              key={intersection.id}
-              intersection={intersection}
-            />
+            <IntersectionCard key={intersection.id} intersection={intersection} />
           ))
         )}
       </div>
@@ -276,73 +318,50 @@ export default function AnalyticsDashboard({
   };
 
   const renderSafety = () => {
-    if (!analytics) return null;
+    if (!analytics) return <EmptyState />;
 
     const recentNearMisses = analytics.getRecentNearMisses(60);
     const highSeverity = recentNearMisses.filter((m) => m.severity === "high");
-    const mediumSeverity = recentNearMisses.filter(
-      (m) => m.severity === "medium"
-    );
+    const mediumSeverity = recentNearMisses.filter((m) => m.severity === "medium");
     const lowSeverity = recentNearMisses.filter((m) => m.severity === "low");
 
     return (
-      <div className="space-y-6">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <MetricCard
-            title="High Severity"
-            value={highSeverity.length}
-            unit="events"
-            color="text-red-500"
-          />
-          <MetricCard
-            title="Medium Severity"
-            value={mediumSeverity.length}
-            unit="events"
-            color="text-yellow-500"
-          />
-          <MetricCard
-            title="Low Severity"
-            value={lowSeverity.length}
-            unit="events"
-            color="text-blue-500"
-          />
+      <div className="space-y-5">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+          <MetricCard icon={<ShieldAlert size={17} />} label="High severity" value={highSeverity.length} unit="events" meta="Immediate attention" tone="rose" />
+          <MetricCard icon={<ShieldAlert size={17} />} label="Medium severity" value={mediumSeverity.length} unit="events" meta="Monitor" tone="amber" />
+          <MetricCard icon={<ShieldAlert size={17} />} label="Low severity" value={lowSeverity.length} unit="events" meta="Observed" tone="blue" />
         </div>
 
-        <div className="bg-gray-800 rounded-lg p-4">
-          <h3 className="text-lg font-semibold mb-3">
-            Recent Near Misses (Last 60s)
+        <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+          <h3 className="text-base font-black text-slate-950">
+            Recent Near Misses
           </h3>
-          <div className="space-y-2 max-h-96 overflow-y-auto">
+          <div className="mt-3 max-h-96 space-y-2 overflow-y-auto pr-1">
             {recentNearMisses.length === 0 ? (
-              <p className="text-gray-400 text-center py-8">
-                No near misses detected
+              <p className="py-8 text-center text-sm text-slate-500">
+                No near misses detected in the last 60 seconds.
               </p>
             ) : (
               recentNearMisses.reverse().map((miss, idx) => (
                 <div
                   key={idx}
-                  className="bg-gray-700 rounded p-3 flex items-center justify-between"
+                  className="flex items-center justify-between rounded-md border border-slate-200 bg-slate-50 p-3"
                 >
                   <div>
-                    <div className="text-sm font-mono">
-                      {miss.car1Id.slice(0, 8)} ↔ {miss.car2Id.slice(0, 8)}
+                    <div className="font-mono text-xs font-bold text-slate-900">
+                      {miss.car1Id.slice(0, 8)} to {miss.car2Id.slice(0, 8)}
                     </div>
-                    <div className="text-xs text-gray-400">
+                    <div className="text-[10px] text-slate-500">
                       {new Date(miss.timestamp).toLocaleTimeString()}
                     </div>
                   </div>
                   <div className="text-right">
-                    <div className="text-sm">{miss.distance.toFixed(2)}m</div>
-                    <div
-                      className={`text-xs font-bold ${
-                        miss.severity === "high"
-                          ? "text-red-500"
-                          : miss.severity === "medium"
-                            ? "text-yellow-500"
-                            : "text-blue-500"
-                      }`}
-                    >
-                      {miss.severity.toUpperCase()}
+                    <div className="text-xs font-bold text-slate-900">
+                      {miss.distance.toFixed(2)}m
+                    </div>
+                    <div className={`text-[10px] font-black uppercase ${severityColor(miss.severity)}`}>
+                      {miss.severity}
                     </div>
                   </div>
                 </div>
@@ -355,71 +374,69 @@ export default function AnalyticsDashboard({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className="bg-gray-900 rounded-lg shadow-2xl w-full max-w-6xl max-h-[90vh] flex flex-col">
-        {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-gray-700">
-          <h2 className="text-2xl font-bold text-white">
-            Traffic Analytics Dashboard
-          </h2>
-          <div className="flex gap-2">
-            <button
-              onClick={handleExportCSV}
-              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded text-white text-sm font-medium transition-colors"
-            >
-              Export CSV
-            </button>
-            <button
-              onClick={onClose}
-              className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded text-white text-sm font-medium transition-colors"
-            >
-              Close
-            </button>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-md">
+      <div className="flex max-h-[90vh] w-full max-w-7xl flex-col overflow-hidden rounded-lg border border-slate-200 bg-slate-50 shadow-2xl">
+        <header className="border-b border-slate-200 bg-white px-6 py-5">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex items-center gap-4">
+              <div className="flex h-11 w-11 items-center justify-center rounded bg-slate-950 text-white">
+                <BarChart3 size={22} />
+              </div>
+              <div>
+                <p className="text-[10px] font-black uppercase text-emerald-700">
+                  TorontoView Economic Command Centre
+                </p>
+                <h2 className="text-xl font-black text-slate-950">
+                  Mobility, Market Access, and Safety Dashboard
+                </h2>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleExportCSV}
+                className="inline-flex items-center gap-2 rounded border border-slate-300 bg-white px-3 py-2 text-xs font-black uppercase text-slate-800 shadow-sm transition-colors hover:bg-slate-100"
+              >
+                <Download size={14} />
+                Export CSV
+              </button>
+              <button
+                onClick={onClose}
+                className="inline-flex h-9 w-9 items-center justify-center rounded bg-slate-950 text-white transition-colors hover:bg-slate-800"
+                aria-label="Close dashboard"
+              >
+                <X size={16} />
+              </button>
+            </div>
           </div>
-        </div>
+        </header>
 
-        {/* Tabs */}
-        <div className="flex border-b border-gray-700 px-6">
-          <TabButton
-            active={selectedTab === "overview"}
-            onClick={() => setSelectedTab("overview")}
-          >
-            Overview
-          </TabButton>
-          <TabButton
-            active={selectedTab === "performance"}
-            onClick={() => setSelectedTab("performance")}
-          >
-            Performance
-          </TabButton>
-          <TabButton
-            active={selectedTab === "traffic"}
-            onClick={() => setSelectedTab("traffic")}
-          >
-            Traffic
-          </TabButton>
-          <TabButton
-            active={selectedTab === "intersections"}
-            onClick={() => setSelectedTab("intersections")}
-          >
-            Intersections
-          </TabButton>
-          <TabButton
-            active={selectedTab === "safety"}
-            onClick={() => setSelectedTab("safety")}
-          >
-            Safety
-          </TabButton>
-        </div>
+        <nav className="flex gap-1 overflow-x-auto border-b border-slate-200 bg-white px-6">
+          {([
+            ["overview", "Overview"],
+            ["economy", "Economy"],
+            ["traffic", "Mobility"],
+            ["intersections", "Intersections"],
+            ["safety", "Safety"],
+            ["performance", "System"],
+          ] as const).map(([tab, label]) => (
+            <TabButton
+              key={tab}
+              active={selectedTab === tab}
+              onClick={() => setSelectedTab(tab)}
+            >
+              {label}
+            </TabButton>
+          ))}
+        </nav>
 
-        {/* Content */}
-        <div className="flex-1 overflow-y-auto p-6">
+        <main className="flex-1 overflow-y-auto bg-slate-50 p-5">
           {selectedTab === "overview" && renderOverview()}
-          {selectedTab === "performance" && renderPerformance()}
+          {selectedTab === "economy" && renderEconomy()}
           {selectedTab === "traffic" && renderTraffic()}
           {selectedTab === "intersections" && renderIntersections()}
           {selectedTab === "safety" && renderSafety()}
-        </div>
+          {selectedTab === "performance" && renderPerformance()}
+        </main>
       </div>
     </div>
   );
@@ -437,10 +454,10 @@ function TabButton({
   return (
     <button
       onClick={onClick}
-      className={`px-6 py-3 text-sm font-medium transition-colors ${
+      className={`border-b-2 px-4 py-3 text-xs font-black uppercase transition-colors ${
         active
-          ? "text-blue-500 border-b-2 border-blue-500"
-          : "text-gray-400 hover:text-gray-200"
+          ? "border-emerald-700 text-slate-950"
+          : "border-transparent text-slate-500 hover:text-slate-900"
       }`}
     >
       {children}
@@ -449,55 +466,74 @@ function TabButton({
 }
 
 function MetricCard({
-  title,
+  icon,
+  label,
   value,
   unit,
-  color,
+  meta,
+  tone,
   trend,
 }: {
-  title: string;
+  icon: React.ReactNode;
+  label: string;
   value: number | string;
-  unit: string;
-  color: string;
+  unit?: string;
+  meta: string;
+  tone: "emerald" | "blue" | "amber" | "rose";
   trend?: "up" | "down" | "stable";
 }) {
+  const toneClass = {
+    emerald: "text-emerald-700 bg-emerald-50 border-emerald-100",
+    blue: "text-blue-700 bg-blue-50 border-blue-100",
+    amber: "text-amber-700 bg-amber-50 border-amber-100",
+    rose: "text-rose-700 bg-rose-50 border-rose-100",
+  }[tone];
+
   return (
-    <div className="bg-gray-800 rounded-lg p-4">
-      <div className="text-sm text-gray-400 mb-1">{title}</div>
-      <div className="flex items-end justify-between">
-        <div className={`text-3xl font-bold ${color}`}>
-          {value}
-          <span className="text-base ml-1">{unit}</span>
+    <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="flex items-start justify-between gap-3">
+        <div className={`flex h-9 w-9 items-center justify-center rounded border ${toneClass}`}>
+          {icon}
         </div>
         {trend && (
-          <div
-            className={`text-xs ${
-              trend === "up"
-                ? "text-green-500"
-                : trend === "down"
-                  ? "text-red-500"
-                  : "text-gray-500"
-            }`}
-          >
-            {trend === "up" ? "↑" : trend === "down" ? "↓" : "→"}
-          </div>
+          <span className={`text-[10px] font-black uppercase ${trendTextColor(trend)}`}>
+            {trend === "up" ? "Up" : trend === "down" ? "Down" : "Stable"}
+          </span>
         )}
       </div>
+      <p className="mt-4 text-[10px] font-black uppercase text-slate-500">
+        {label}
+      </p>
+      <div className="mt-1 flex items-baseline gap-1">
+        <span className="text-2xl font-black text-slate-950">{value}</span>
+        {unit && <span className="text-xs font-bold text-slate-500">{unit}</span>}
+      </div>
+      <p className="mt-2 text-[11px] font-medium text-slate-500">{meta}</p>
     </div>
   );
 }
 
 function ChartCard({
+  eyebrow,
   title,
+  subtitle,
   children,
 }: {
+  eyebrow?: string;
   title: string;
+  subtitle?: string;
   children: React.ReactNode;
 }) {
   return (
-    <div className="bg-gray-800 rounded-lg p-4">
-      <h3 className="text-sm text-gray-400 mb-3">{title}</h3>
-      {children}
+    <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+      {eyebrow && (
+        <p className="text-[10px] font-black uppercase text-slate-500">
+          {eyebrow}
+        </p>
+      )}
+      <h3 className="mt-1 text-base font-black text-slate-950">{title}</h3>
+      {subtitle && <p className="mt-1 text-xs text-slate-500">{subtitle}</p>}
+      <div className="mt-4">{children}</div>
     </div>
   );
 }
@@ -512,30 +548,37 @@ function MiniChart({
   color: string;
 }) {
   if (data.length === 0) {
-    return <div className="h-24 flex items-center justify-center text-gray-500">No data</div>;
+    return (
+      <div className="flex h-28 items-center justify-center rounded-md bg-slate-50 text-sm text-slate-500">
+        No data
+      </div>
+    );
   }
 
   const width = 100;
   const height = 100;
-  const padding = 5;
+  const padding = 6;
+  const safeMax = Math.max(max, 1);
 
   const points = data.map((value, index) => {
     const x = (index / (data.length - 1 || 1)) * (width - padding * 2) + padding;
-    const y = height - (value / max) * (height - padding * 2) - padding;
-    return `${x},${y}`;
+    const y = height - (value / safeMax) * (height - padding * 2) - padding;
+    return `${x},${Math.max(padding, Math.min(height - padding, y))}`;
   });
 
   return (
     <svg
       viewBox={`0 0 ${width} ${height}`}
-      className="w-full h-24"
+      className="h-28 w-full rounded-md bg-slate-50"
       preserveAspectRatio="none"
     >
+      <line x1="6" y1="82" x2="94" y2="82" stroke="#e2e8f0" strokeWidth="1" />
+      <line x1="6" y1="50" x2="94" y2="50" stroke="#e2e8f0" strokeWidth="1" />
       <polyline
         points={points.join(" ")}
         fill="none"
         stroke={color}
-        strokeWidth="2"
+        strokeWidth="2.5"
         strokeLinecap="round"
         strokeLinejoin="round"
       />
@@ -557,19 +600,19 @@ function VehicleTypeBar({
   const percentage = total > 0 ? (count / total) * 100 : 0;
 
   return (
-    <div>
-      <div className="flex justify-between text-sm mb-1">
-        <span className="text-gray-400">{type}</span>
-        <span className="text-white font-semibold">{count}</span>
+    <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
+      <div className="flex justify-between text-xs">
+        <span className="font-bold text-slate-600">{type}</span>
+        <span className="font-black text-slate-950">{count}</span>
       </div>
-      <div className="h-2 bg-gray-700 rounded-full overflow-hidden">
+      <div className="mt-3 h-2 overflow-hidden rounded-sm bg-slate-100">
         <div
           className={`h-full ${color} transition-all duration-300`}
           style={{ width: `${percentage}%` }}
         />
       </div>
-      <div className="text-xs text-gray-500 mt-1">
-        {percentage.toFixed(1)}%
+      <div className="mt-2 text-[10px] font-bold text-slate-500">
+        {percentage.toFixed(1)}% of modeled trips
       </div>
     </div>
   );
@@ -581,35 +624,131 @@ function IntersectionCard({
   intersection: IntersectionMetrics;
 }) {
   return (
-    <div className="bg-gray-800 rounded-lg p-4">
-      <div className="flex justify-between items-start mb-3">
-        <h3 className="font-semibold">Intersection {intersection.id}</h3>
-        <span className="text-xs text-gray-400">
-          Cycle: {(intersection.cycleTime / 1000).toFixed(0)}s
+    <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-[10px] font-black uppercase text-slate-500">
+            Intersection
+          </p>
+          <h3 className="font-mono text-sm font-black text-slate-950">
+            {intersection.id}
+          </h3>
+        </div>
+        <span className="rounded bg-slate-100 px-2 py-1 text-[10px] font-black text-slate-600">
+          {(intersection.cycleTime / 1000).toFixed(0)}s cycle
         </span>
       </div>
-      <div className="grid grid-cols-3 gap-4 text-sm">
-        <div>
-          <div className="text-gray-400">Avg Delay</div>
-          <div className="text-lg font-semibold text-yellow-500">
-            {intersection.averageDelay.toFixed(1)}s
-          </div>
-        </div>
-        <div>
-          <div className="text-gray-400">Queue Length</div>
-          <div className="text-lg font-semibold text-blue-500">
-            {intersection.queueLength.toFixed(1)}
-          </div>
-        </div>
-        <div>
-          <div className="text-gray-400">Crossings</div>
-          <div className="text-lg font-semibold text-green-500">
-            {intersection.totalCrossingVehicles}
-          </div>
-        </div>
+      <div className="mt-4 grid grid-cols-3 gap-3 text-sm">
+        <Readout label="Avg delay" value={`${intersection.averageDelay.toFixed(1)}s`} />
+        <Readout label="Queue" value={intersection.queueLength.toFixed(1)} />
+        <Readout label="Crossings" value={intersection.totalCrossingVehicles} />
       </div>
     </div>
   );
+}
+
+function EconomicSignal({
+  label,
+  value,
+  detail,
+}: {
+  label: string;
+  value: number;
+  detail: string;
+}) {
+  return (
+    <div>
+      <div className="flex items-center justify-between gap-4">
+        <div>
+          <p className="text-sm font-bold text-slate-900">{label}</p>
+          <p className="text-xs text-slate-500">{detail}</p>
+        </div>
+        <span className="font-mono text-sm font-black text-slate-950">
+          {value}/100
+        </span>
+      </div>
+      <div className="mt-2 h-2 overflow-hidden rounded-sm bg-slate-100">
+        <div
+          className="h-full bg-emerald-700"
+          style={{ width: `${Math.max(0, Math.min(100, value))}%` }}
+        />
+      </div>
+    </div>
+  );
+}
+
+function Readout({
+  label,
+  value,
+}: {
+  label: string;
+  value: number | string;
+}) {
+  return (
+    <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
+      <p className="text-[10px] font-black uppercase text-slate-500">{label}</p>
+      <p className="mt-1 text-sm font-black text-slate-950">{value}</p>
+    </div>
+  );
+}
+
+function EmptyState({ title = "Waiting for live analytics" }: { title?: string }) {
+  return (
+    <div className="flex min-h-64 items-center justify-center rounded-lg border border-dashed border-slate-300 bg-white text-sm font-bold text-slate-500">
+      {title}
+    </div>
+  );
+}
+
+function buildEconomicModel(snapshot: AnalyticsSnapshot) {
+  const { traffic, intersections, nearMisses } = snapshot;
+  const activeVehicles = traffic.vehicleCount;
+  const averageDelay =
+    intersections.length > 0
+      ? intersections.reduce((sum, item) => sum + item.averageDelay, 0) /
+        intersections.length
+      : 0;
+  const freightShare =
+    activeVehicles > 0
+      ? Math.round((traffic.vehiclesByType.truck / activeVehicles) * 100)
+      : 0;
+  const accessFlow = activeVehicles * Math.max(traffic.averageSpeed, 1);
+  const marketAccessScore = score(
+    42 + traffic.averageSpeed * 0.7 + activeVehicles * 1.1 - averageDelay * 0.8,
+  );
+  const retailReachScore = score(35 + activeVehicles * 2 + traffic.averageSpeed * 0.55);
+  const logisticsFitScore = score(50 + freightShare * 1.2 + traffic.averageSpeed * 0.45 - averageDelay);
+  const safetyConfidenceScore = score(92 - nearMisses.length * 8 - averageDelay * 0.6);
+  const commercialMobilityScore = score(
+    marketAccessScore * 0.45 + logisticsFitScore * 0.3 + safetyConfidenceScore * 0.25,
+  );
+  const hourlySpendCapacity = Math.round(activeVehicles * 42 + traffic.averageSpeed * 180);
+  const dailySpendPotential = hourlySpendCapacity * 12;
+  const delayCostProxy = Math.round(activeVehicles * averageDelay * 3.25);
+  const riskBand =
+    safetyConfidenceScore < 55 || delayCostProxy > 600
+      ? "Elevated"
+      : safetyConfidenceScore < 75
+        ? "Moderate"
+        : "Low";
+
+  return {
+    accessFlow,
+    commercialMobilityScore,
+    dailySpendPotential,
+    delayCostProxy,
+    freightShare,
+    hourlySpendCapacity,
+    logisticsFitScore,
+    marketAccessScore,
+    retailReachScore,
+    riskBand,
+    safetyConfidenceScore,
+  };
+}
+
+function score(value: number) {
+  return Math.round(Math.max(0, Math.min(100, value)));
 }
 
 function getTrend(data: number[]): "up" | "down" | "stable" {
@@ -622,4 +761,16 @@ function getTrend(data: number[]): "up" | "down" | "stable" {
   if (lastValue > avg * 1.1) return "up";
   if (lastValue < avg * 0.9) return "down";
   return "stable";
+}
+
+function trendTextColor(trend: "up" | "down" | "stable") {
+  if (trend === "up") return "text-emerald-700";
+  if (trend === "down") return "text-rose-700";
+  return "text-slate-500";
+}
+
+function severityColor(severity: "low" | "medium" | "high") {
+  if (severity === "high") return "text-rose-700";
+  if (severity === "medium") return "text-amber-700";
+  return "text-blue-700";
 }
