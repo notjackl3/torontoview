@@ -27,6 +27,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--grad-accum", type=int, default=int(os.environ.get("LORA_GRAD_ACCUM", "8")))
     parser.add_argument("--learning-rate", type=float, default=float(os.environ.get("LORA_LEARNING_RATE", "2e-4")))
     parser.add_argument("--max-steps", type=int, default=int(os.environ.get("LORA_MAX_STEPS", "0")))
+    parser.add_argument("--backend", choices=["auto", "unsloth", "peft"], default=os.environ.get("LORA_BACKEND", "auto"))
+    parser.add_argument("--lora-r", type=int, default=int(os.environ.get("LORA_R", "16")))
+    parser.add_argument("--lora-alpha", type=int, default=int(os.environ.get("LORA_ALPHA", "16")))
     return parser.parse_args()
 
 
@@ -48,50 +51,20 @@ def messages_to_text(tokenizer, messages: list[dict]) -> str:
     return "\n".join(parts)
 
 
-def main() -> None:
-    args = parse_args()
-    dataset_path = Path(args.dataset)
-    output_dir = Path(args.output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
+def build_dataset(tokenizer, rows: list[dict]):
+    from datasets import Dataset
 
-    try:
-        from datasets import Dataset
-        from trl import SFTTrainer, SFTConfig
-        from unsloth import FastLanguageModel
-    except ImportError as error:
-        raise SystemExit(
-            "Missing training dependencies. On the DGX, install/activate an environment with "
-            "unsloth, trl, transformers, accelerate, peft, and datasets."
-        ) from error
-
-    rows = load_rows(dataset_path)
-    if not rows:
-        raise SystemExit(f"No rows found in {dataset_path}")
-
-    model, tokenizer = FastLanguageModel.from_pretrained(
-        model_name=args.base_model,
-        max_seq_length=args.max_seq_length,
-        dtype=None,
-        load_in_4bit=True,
-    )
-    model = FastLanguageModel.get_peft_model(
-        model,
-        r=16,
-        target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
-        lora_alpha=16,
-        lora_dropout=0,
-        bias="none",
-        use_gradient_checkpointing="unsloth",
-        random_state=3407,
-    )
-
-    dataset = Dataset.from_list([
+    return Dataset.from_list([
         {"text": messages_to_text(tokenizer, row["messages"]), "agent": row.get("agent", "unknown")}
         for row in rows
     ])
 
-    config = SFTConfig(
-        output_dir=str(output_dir),
+
+def build_sft_config(args: argparse.Namespace):
+    from trl import SFTConfig
+
+    return SFTConfig(
+        output_dir=str(args.output_dir),
         dataset_text_field="text",
         max_seq_length=args.max_seq_length,
         per_device_train_batch_size=args.batch_size,
@@ -101,20 +74,119 @@ def main() -> None:
         max_steps=args.max_steps if args.max_steps > 0 else -1,
         logging_steps=10,
         save_strategy="epoch",
-        optim="adamw_8bit",
+        optim="adamw_torch",
         seed=3407,
+        bf16=True,
         report_to=[],
     )
-    trainer = SFTTrainer(model=model, tokenizer=tokenizer, train_dataset=dataset, args=config)
+
+
+def train_with_unsloth(args: argparse.Namespace, rows: list[dict]) -> str:
+    try:
+        from trl import SFTTrainer
+        from unsloth import FastLanguageModel
+    except ImportError as error:
+        raise RuntimeError(f"Unsloth backend unavailable: {error}") from error
+
+    model, tokenizer = FastLanguageModel.from_pretrained(
+        model_name=args.base_model,
+        max_seq_length=args.max_seq_length,
+        dtype=None,
+        load_in_4bit=True,
+    )
+    model = FastLanguageModel.get_peft_model(
+        model,
+        r=args.lora_r,
+        target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
+        lora_alpha=args.lora_alpha,
+        lora_dropout=0,
+        bias="none",
+        use_gradient_checkpointing="unsloth",
+        random_state=3407,
+    )
+
+    dataset = build_dataset(tokenizer, rows)
+    trainer = SFTTrainer(model=model, tokenizer=tokenizer, train_dataset=dataset, args=build_sft_config(args))
     trainer.train()
-    trainer.save_model(str(output_dir))
-    tokenizer.save_pretrained(str(output_dir))
+    trainer.save_model(str(args.output_dir))
+    tokenizer.save_pretrained(str(args.output_dir))
+    return "unsloth"
+
+
+def train_with_peft(args: argparse.Namespace, rows: list[dict]) -> str:
+    try:
+        import torch
+        from peft import LoraConfig, get_peft_model
+        from transformers import AutoModelForCausalLM, AutoTokenizer
+        from trl import SFTTrainer
+    except ImportError as error:
+        raise RuntimeError(
+            "PEFT backend unavailable. Install torch, transformers, trl, peft, accelerate, and datasets."
+        ) from error
+
+    tokenizer = AutoTokenizer.from_pretrained(args.base_model, trust_remote_code=True)
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
+
+    model = AutoModelForCausalLM.from_pretrained(
+        args.base_model,
+        trust_remote_code=True,
+        torch_dtype=torch.bfloat16,
+        device_map="auto",
+    )
+    model.config.use_cache = False
+
+    lora_config = LoraConfig(
+        r=args.lora_r,
+        lora_alpha=args.lora_alpha,
+        lora_dropout=0.05,
+        bias="none",
+        task_type="CAUSAL_LM",
+        target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
+    )
+    model = get_peft_model(model, lora_config)
+    model.print_trainable_parameters()
+
+    dataset = build_dataset(tokenizer, rows)
+    trainer = SFTTrainer(model=model, tokenizer=tokenizer, train_dataset=dataset, args=build_sft_config(args))
+    trainer.train()
+    trainer.save_model(str(args.output_dir))
+    tokenizer.save_pretrained(str(args.output_dir))
+    return "peft"
+
+
+def main() -> None:
+    args = parse_args()
+    args.dataset = str(Path(args.dataset))
+    args.output_dir = str(Path(args.output_dir))
+    dataset_path = Path(args.dataset)
+    output_dir = Path(args.output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    rows = load_rows(dataset_path)
+    if not rows:
+        raise SystemExit(f"No rows found in {dataset_path}")
+
+    backend = args.backend
+    if backend in ("auto", "unsloth"):
+        try:
+            backend = train_with_unsloth(args, rows)
+        except RuntimeError as error:
+            if args.backend == "unsloth":
+                raise SystemExit(str(error)) from error
+            print(f"{error}. Falling back to PEFT backend.")
+            backend = train_with_peft(args, rows)
+    else:
+        backend = train_with_peft(args, rows)
 
     manifest = {
         "baseModel": args.base_model,
         "dataset": str(dataset_path),
         "rows": len(rows),
         "outputDir": str(output_dir),
+        "backend": backend,
+        "loraR": args.lora_r,
+        "loraAlpha": args.lora_alpha,
         "purpose": "TorontoView council behavior LoRA; factual grounding remains RAG.",
     }
     (output_dir / "torontoview-lora-manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")

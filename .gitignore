@@ -54,6 +54,8 @@ data/official-toronto/catalog/
 data/official-toronto/pages/
 data/official-toronto/manifest.json
 data/agent-council/
+models/
+.cache/huggingface/
 
 # Large showcase media (exceeds GitHub's 50MB file limit)
 public/showcase/live-map.gif
