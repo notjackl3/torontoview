@@ -9,6 +9,7 @@
     "fetch:toronto-data": "node scripts/fetch-official-toronto-data.mjs",
     "prepare:agent-council-corpus": "node scripts/prepare-agent-council-corpus.mjs",
     "build:agent-council-index": "node scripts/build-agent-council-index.mjs",
+    "prepare:agent-council-lora": "node scripts/prepare-agent-council-lora-dataset.mjs",
     "lint": "eslint"
   },
   "dependencies": {
