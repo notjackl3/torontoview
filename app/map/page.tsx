@@ -48,7 +48,6 @@ import {
   Pencil,
   Trees,
   Waves,
-  TreePine,
   Briefcase,
 } from "lucide-react";
 import { prefetchMapData } from "@/lib/prefetchMapData";
@@ -143,7 +142,7 @@ function MapPageContent() {
   const [showZoningLayer, setShowZoningLayer] = useState(false);
   const [showParksLayer, setShowParksLayer] = useState(false);
   const [showWaterLayer, setShowWaterLayer] = useState(false);
-  const [showTorontoTreesLayer, setShowTorontoTreesLayer] = useState(false);
+  const showTorontoTreesLayer = true;
   const [showWindLayer, setShowWindLayer] = useState(false);
   const [windData, setWindData] = useState<WindDataSet | null>(null);
   useEffect(() => {
@@ -1089,26 +1088,15 @@ function MapPageContent() {
                 </div>
               </div>
 
-              {/* Street Trees toggle */}
+              {/* Street Trees baseline */}
               <div
-                className={`p-2.5 rounded-md border transition-all cursor-pointer group ${
-                  showTorontoTreesLayer
-                    ? "border-white/15 bg-white/10"
-                    : "border-white/5 hover:border-white/15 bg-white/5"
-                }`}
-                onClick={() =>
-                  setShowTorontoTreesLayer(!showTorontoTreesLayer)
-                }
+                className="p-2.5 rounded-md border border-white/15 bg-white/10"
               >
                 <div className="flex items-center gap-3">
                   <div
-                    className={`w-7 h-7 rounded bg-white/5 border border-white/10 flex items-center justify-center transition-colors ${
-                      showTorontoTreesLayer
-                        ? "text-emerald-400"
-                        : "text-zinc-500 group-hover:text-emerald-400"
-                    }`}
+                    className="w-7 h-7 rounded bg-white/5 border border-white/10 flex items-center justify-center text-emerald-400"
                   >
-                    <TreePine size={14} />
+                    <Trees size={14} />
                   </div>
                   <div className="flex-1">
                     <p className="text-[11px] font-bold text-zinc-200">
@@ -1117,17 +1105,6 @@ function MapPageContent() {
                     <p className="text-[9px] text-zinc-500">
                       ~6k trees · sized by trunk diameter
                     </p>
-                  </div>
-                  <div className="flex items-center">
-                    <input
-                      type="checkbox"
-                      checked={showTorontoTreesLayer}
-                      onChange={(e) =>
-                        setShowTorontoTreesLayer(e.target.checked)
-                      }
-                      onClick={(e) => e.stopPropagation()}
-                      className="accent-accent-blue h-3.5 w-3.5"
-                    />
                   </div>
                 </div>
               </div>

@@ -75,7 +75,7 @@ export interface BuildingExportData {
 }
 
 export const DEFAULT_TREE_CONFIG: TreeConfig = {
-  enabled: false,
+  enabled: true,
   density: 5,
   radius: 8,
   types: ['sugar-maple', 'northern-red-oak', 'white-spruce'],

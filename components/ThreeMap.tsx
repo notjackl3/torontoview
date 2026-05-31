@@ -542,7 +542,7 @@ export default function ThreeMap({
   showZoningLayer = false,
   showParksLayer = false,
   showWaterLayer = false,
-  showTorontoTreesLayer = false,
+  showTorontoTreesLayer = true,
   showWindLayer = false,
   windData = null,
   zoningOffset = { x: 0, z: 0 },

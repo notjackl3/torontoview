@@ -118,7 +118,7 @@ export function TreeForm({ spec, onUpdate }: TreeFormProps) {
   return (
     <div className="space-y-6">
       <h3 className="text-xl font-bold text-zinc-100 mb-2">Landscaping</h3>
-      <p className="text-xs text-zinc-500">Trees from Toronto's Neighbourhood Tree Planting Program</p>
+      <p className="text-xs text-zinc-500">Trees from Toronto&apos;s Neighbourhood Tree Planting Program</p>
 
       {/* AI Advisor Button */}
       <button
@@ -241,42 +241,29 @@ export function TreeForm({ spec, onUpdate }: TreeFormProps) {
         </div>
       )}
 
-      {/* Enable/Disable Toggle */}
-      <div className="flex items-center justify-between">
-        <label className="block text-sm font-semibold text-zinc-400">Enable Trees</label>
-        <button
-          onClick={() => updateTreeConfig({ enabled: !treeConfig.enabled })}
-          className={`relative w-14 h-7 rounded-full transition-all duration-200 ${treeConfig.enabled ? 'bg-blue-500' : 'bg-white/10'}`}
-        >
-          <span className={`absolute top-1 w-5 h-5 rounded-full bg-white shadow transition-all duration-200 ${treeConfig.enabled ? 'left-8' : 'left-1'}`} />
-        </button>
+      <div className="space-y-3">
+        <label className="block text-sm font-semibold text-zinc-400 mb-2">
+          Tree Species ({treeConfig.types.length} selected)
+        </label>
+        <div className="grid grid-cols-3 gap-2 max-h-48 overflow-y-auto pr-1">
+          {TREE_TYPES.map((tree) => (
+            <button
+              key={tree.value}
+              onClick={() => toggleTreeType(tree.value)}
+              onMouseEnter={() => setSelectedTreeInfo(tree)}
+              onMouseLeave={() => setSelectedTreeInfo(null)}
+              className={`px-2 py-2 rounded-lg text-xs font-medium border flex flex-col items-center gap-0.5 transition-colors duration-200 ${
+                treeConfig.types.includes(tree.value)
+                  ? 'bg-white/15 border-white/20 text-white'
+                  : 'bg-white/5 border-white/10 text-zinc-400 hover:bg-white/10 hover:border-white/20 hover:text-zinc-200'
+              }`}
+            >
+              <span className="text-base">{tree.icon}</span>
+              <span className="text-center leading-tight">{tree.label.split(' ')[0]}</span>
+            </button>
+          ))}
+        </div>
       </div>
-
-      {treeConfig.enabled && (
-        <>
-          <div className="space-y-3">
-            <label className="block text-sm font-semibold text-zinc-400 mb-2">
-              Tree Species ({treeConfig.types.length} selected)
-            </label>
-            <div className="grid grid-cols-3 gap-2 max-h-48 overflow-y-auto pr-1">
-              {TREE_TYPES.map((tree) => (
-                <button
-                  key={tree.value}
-                  onClick={() => toggleTreeType(tree.value)}
-                  onMouseEnter={() => setSelectedTreeInfo(tree)}
-                  onMouseLeave={() => setSelectedTreeInfo(null)}
-                  className={`px-2 py-2 rounded-lg text-xs font-medium border flex flex-col items-center gap-0.5 transition-colors duration-200 ${
-                    treeConfig.types.includes(tree.value)
-                      ? 'bg-white/15 border-white/20 text-white'
-                      : 'bg-white/5 border-white/10 text-zinc-400 hover:bg-white/10 hover:border-white/20 hover:text-zinc-200'
-                  }`}
-                >
-                  <span className="text-base">{tree.icon}</span>
-                  <span className="text-center leading-tight">{tree.label.split(' ')[0]}</span>
-                </button>
-              ))}
-            </div>
-          </div>
 
           {selectedTreeInfo && (
             <div className="bg-white/5 border border-white/10 rounded-lg p-3 text-xs">
@@ -322,8 +309,6 @@ export function TreeForm({ spec, onUpdate }: TreeFormProps) {
             </button>
             <p className="text-xs text-zinc-500 text-center mt-2">Generate a new random arrangement</p>
           </div>
-        </>
-      )}
     </div>
   );
 }
