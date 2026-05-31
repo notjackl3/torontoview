@@ -15,8 +15,8 @@ interface TreeFeature {
   dbh: number; // cm
 }
 
-const TRUNK_COLOR = 0x5a3a22;
-const FOLIAGE_COLOR = 0x356b2c;
+const TRUNK_COLOR = 0x7a4f2e;
+const FOLIAGE_COLOR = 0x4f9a3a;
 
 // World scale factor — matches CityProjection.SCALE_FACTOR so the tree's
 // real-world size is preserved.
@@ -33,8 +33,18 @@ export function renderTorontoTreesLayer(trees: TreeFeature[]): THREE.Group {
   trunkGeo.translate(0, 0.5, 0); // origin at base
   const foliageGeo = new THREE.SphereGeometry(1, 6, 5);
 
-  const trunkMat = new THREE.MeshLambertMaterial({ color: TRUNK_COLOR });
-  const foliageMat = new THREE.MeshLambertMaterial({ color: FOLIAGE_COLOR });
+  const trunkMat = new THREE.MeshPhongMaterial({
+    color: TRUNK_COLOR,
+    emissive: new THREE.Color(TRUNK_COLOR),
+    emissiveIntensity: 0.18,
+    shininess: 8,
+  });
+  const foliageMat = new THREE.MeshPhongMaterial({
+    color: FOLIAGE_COLOR,
+    emissive: new THREE.Color(0x2f6f2f),
+    emissiveIntensity: 0.28,
+    shininess: 10,
+  });
 
   const trunkMesh = new THREE.InstancedMesh(trunkGeo, trunkMat, trees.length);
   const foliageMesh = new THREE.InstancedMesh(
