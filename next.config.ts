@@ -1,8 +1,14 @@
 import type { NextConfig } from "next";
 
+const projectRoot = __dirname;
+
 const nextConfig: NextConfig = {
   // Disable React strict mode for Three.js compatibility
   reactStrictMode: false,
+
+  turbopack: {
+    root: projectRoot,
+  },
 
   images: {
     remotePatterns: [
