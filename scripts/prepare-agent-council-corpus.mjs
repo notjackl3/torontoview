@@ -302,7 +302,7 @@ async function chunksFromFile(filePath, relativeFile, manifest) {
   const group = groupFromFile(fileName);
   const citation = citationForFile(manifest, relativeFile);
   const buffer = await readFile(filePath);
-  const context = { citation, sourceFile: relativeFile, group };
+  const context = { citation, sourceFile: relativeFile, group, agent: agentFromGroup(group) };
   const lower = fileName.toLowerCase();
 
   if (lower.endsWith(".csv")) {
@@ -312,7 +312,23 @@ async function chunksFromFile(filePath, relativeFile, manifest) {
       kind: "csv",
     });
   }
-  if (lower.endsWith(".json") || lower.endsWith(".geojson")) return chunksFromJson(buffer, context);
+  if (lower.endsWith(".json") || lower.endsWith(".geojson")) {
+    try {
+      return chunksFromJson(buffer, context);
+    } catch {
+      const text = buffer.toString("utf8");
+      if (text.split(/\r?\n/, 1)[0]?.includes(",")) {
+        return chunksFromRecords({
+          ...context,
+          records: rowsToRecords(parseCsv(text)),
+          kind: "csv-with-json-extension",
+        });
+      }
+      return chunkText(text).map((chunkTextValue, index) =>
+        makeChunk({ ...context, text: chunkTextValue, recordIndex: index + 1, kind: "json-text-fallback" })
+      ).filter(Boolean);
+    }
+  }
   if (lower.endsWith(".html") || lower.endsWith(".txt")) {
     return chunkText(buffer.toString("utf8")).map((text, index) =>
       makeChunk({ ...context, text, recordIndex: index + 1, kind: lower.endsWith(".html") ? "html" : "text" })
