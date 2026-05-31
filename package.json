@@ -6,6 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "fetch:toronto-data": "node scripts/fetch-official-toronto-data.mjs",
     "lint": "eslint"
   },
   "dependencies": {

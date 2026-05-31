@@ -46,6 +46,12 @@ model/.next/
 # Map data - keep processed, ignore raw
 public/map-data/*-raw.json
 
+# Official data cache for local/DGX RAG and fine-tuning prep
+data/official-toronto/raw/
+data/official-toronto/catalog/
+data/official-toronto/pages/
+data/official-toronto/manifest.json
+
 # Large showcase media (exceeds GitHub's 50MB file limit)
 public/showcase/live-map.gif
 public/showcase/shadow-analysis.gif
