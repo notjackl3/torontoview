@@ -11,6 +11,7 @@ Toronto facts. Official factual grounding remains in the RAG corpus.
 from __future__ import annotations
 
 import argparse
+import inspect
 import json
 import os
 from pathlib import Path
@@ -63,27 +64,53 @@ def build_dataset(tokenizer, rows: list[dict]):
 def build_sft_config(args: argparse.Namespace):
     from trl import SFTConfig
 
-    return SFTConfig(
-        output_dir=str(args.output_dir),
-        dataset_text_field="text",
-        max_seq_length=args.max_seq_length,
-        per_device_train_batch_size=args.batch_size,
-        gradient_accumulation_steps=args.grad_accum,
-        num_train_epochs=args.epochs,
-        learning_rate=args.learning_rate,
-        max_steps=args.max_steps if args.max_steps > 0 else -1,
-        logging_steps=10,
-        save_strategy="epoch",
-        optim="adamw_torch",
-        seed=3407,
-        bf16=True,
-        report_to=[],
-    )
+    signature = inspect.signature(SFTConfig)
+    supported = signature.parameters
+    config_kwargs = {
+        "output_dir": str(args.output_dir),
+        "dataset_text_field": "text",
+        "per_device_train_batch_size": args.batch_size,
+        "gradient_accumulation_steps": args.grad_accum,
+        "num_train_epochs": args.epochs,
+        "learning_rate": args.learning_rate,
+        "max_steps": args.max_steps if args.max_steps > 0 else -1,
+        "logging_steps": 10,
+        "save_strategy": "epoch",
+        "optim": "adamw_torch",
+        "seed": 3407,
+        "bf16": True,
+        "report_to": [],
+    }
+
+    if "max_seq_length" in supported:
+        config_kwargs["max_seq_length"] = args.max_seq_length
+    elif "max_length" in supported:
+        config_kwargs["max_length"] = args.max_seq_length
+
+    filtered_kwargs = {
+        key: value for key, value in config_kwargs.items() if key in supported
+    }
+    return SFTConfig(**filtered_kwargs)
+
+
+def build_sft_trainer(model, tokenizer, dataset, args: argparse.Namespace):
+    from trl import SFTTrainer
+
+    signature = inspect.signature(SFTTrainer)
+    trainer_kwargs = {
+        "model": model,
+        "train_dataset": dataset,
+        "args": build_sft_config(args),
+    }
+    if "tokenizer" in signature.parameters:
+        trainer_kwargs["tokenizer"] = tokenizer
+    elif "processing_class" in signature.parameters:
+        trainer_kwargs["processing_class"] = tokenizer
+    return SFTTrainer(**trainer_kwargs)
 
 
 def train_with_unsloth(args: argparse.Namespace, rows: list[dict]) -> str:
     try:
-        from trl import SFTTrainer
         from unsloth import FastLanguageModel
     except ImportError as error:
         raise RuntimeError(f"Unsloth backend unavailable: {error}") from error
@@ -106,7 +133,7 @@ def train_with_unsloth(args: argparse.Namespace, rows: list[dict]) -> str:
     )
 
     dataset = build_dataset(tokenizer, rows)
-    trainer = SFTTrainer(model=model, tokenizer=tokenizer, train_dataset=dataset, args=build_sft_config(args))
+    trainer = build_sft_trainer(model, tokenizer, dataset, args)
     trainer.train()
     trainer.save_model(str(args.output_dir))
     tokenizer.save_pretrained(str(args.output_dir))
@@ -118,7 +145,6 @@ def train_with_peft(args: argparse.Namespace, rows: list[dict]) -> str:
         import torch
         from peft import LoraConfig, get_peft_model
         from transformers import AutoModelForCausalLM, AutoTokenizer
-        from trl import SFTTrainer
     except ImportError as error:
         raise RuntimeError(
             "PEFT backend unavailable. Install torch, transformers, trl, peft, accelerate, and datasets."
@@ -148,7 +174,7 @@ def train_with_peft(args: argparse.Namespace, rows: list[dict]) -> str:
     model.print_trainable_parameters()
 
     dataset = build_dataset(tokenizer, rows)
-    trainer = SFTTrainer(model=model, tokenizer=tokenizer, train_dataset=dataset, args=build_sft_config(args))
+    trainer = build_sft_trainer(model, tokenizer, dataset, args)
     trainer.train()
     trainer.save_model(str(args.output_dir))
     tokenizer.save_pretrained(str(args.output_dir))
