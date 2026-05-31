@@ -336,7 +336,10 @@ export function applyTimeOfDay(
   // Tint ground tiles
   if (groundGroup) {
     groundGroup.traverse((child) => {
-      if (child instanceof THREE.Mesh && child.name.startsWith("ground-tile-")) {
+      if (
+        child instanceof THREE.Mesh &&
+        (child.name.startsWith("ground-tile-") || child.name === "ground-plane")
+      ) {
         const mat = child.material as THREE.MeshStandardMaterial;
         mat.color.copy(config.groundTint);
       }

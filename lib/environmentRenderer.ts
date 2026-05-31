@@ -1,10 +1,9 @@
 import * as THREE from "three";
 
 /**
- * Fetches map imagery for a bounding box from OSM-based sources
- * Uses the same data source as buildings/roads for perfect alignment
- * @param bbox - [south, west, north, east] bounding box
- * @returns Promise resolving to map image URL or null
+ * Fetches a static map image for a bounding box. Mapbox is preferred because
+ * its Static Images API can legally be used as a rendered map surface when a
+ * project token is configured. OSM is a no-token fallback for local demos.
  */
 export async function fetchSatelliteImagery(
   bbox: [number, number, number, number],
@@ -12,70 +11,80 @@ export async function fetchSatelliteImagery(
 ): Promise<string | null> {
   const [south, west, north, east] = bbox;
 
-  // Calculate image dimensions that match the bbox aspect ratio
-  // so the image maps 1:1 onto the plane without distortion
   const latRad = ((south + north) / 2) * (Math.PI / 180);
-  const lngSpan = (east - west) * Math.cos(latRad); // adjusted for latitude
+  const lngSpan = (east - west) * Math.cos(latRad);
   const latSpan = north - south;
   const aspect = lngSpan / latSpan;
   const maxDim = 1280;
   const width = aspect >= 1 ? maxDim : Math.round(maxDim * aspect);
   const height = aspect >= 1 ? Math.round(maxDim / aspect) : maxDim;
 
-  const mapboxToken = process.env.NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN;
+  const mapboxToken =
+    process.env.NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN ||
+    process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
   if (mapboxToken) {
-    const styles = mapStyle === "light"
-      ? ["streets-v12"]
-      : ["satellite-v9", "satellite-streets-v12"];
-    for (const style of styles) {
-      try {
-        const url = `https://api.mapbox.com/styles/v1/mapbox/${style}/static/[${west},${south},${east},${north}]/${width}x${height}@2x?access_token=${mapboxToken}`;
-        const res = await fetch(url, { method: "HEAD" });
-        if (res.ok) {
-          console.log(`✅ Mapbox ${style} imagery ready`);
-          return url;
-        }
-      } catch (error) {
-        console.warn(`Mapbox ${style} failed`, error);
-      }
-    }
+    const style =
+      mapStyle === "light" ? "light-v11" : "satellite-streets-v12";
+    return `https://api.mapbox.com/styles/v1/mapbox/${style}/static/[${west},${south},${east},${north}]/${width}x${height}@2x?access_token=${mapboxToken}`;
   }
 
-  // Fallback: OpenStreetMap static map
   try {
     const centerLat = (south + north) / 2;
     const centerLng = (west + east) / 2;
     const zoom = Math.floor(Math.log2(360 / (north - south))) - 1;
-    const osmUrl = `https://staticmap.openstreetmap.de/staticmap.php?center=${centerLat},${centerLng}&zoom=${zoom}&size=${width}x${height}&maptype=mapnik`;
-    console.log("✅ OSM static map URL generated");
-    return osmUrl;
+    return `https://staticmap.openstreetmap.de/staticmap.php?center=${centerLat},${centerLng}&zoom=${zoom}&size=${width}x${height}&maptype=mapnik`;
   } catch (error) {
-    console.warn("OSM static map failed", error);
+    console.warn("OSM static map URL generation failed", error);
   }
 
   return null;
 }
 
+export async function applyGroundImagery(
+  groundGroup: THREE.Group,
+  bbox: [number, number, number, number],
+  mapStyle: "satellite" | "light" = "satellite",
+): Promise<boolean> {
+  const imageUrl = await fetchSatelliteImagery(bbox, mapStyle);
+  const plane = groundGroup.getObjectByName("ground-plane");
+  if (!imageUrl || !(plane instanceof THREE.Mesh)) return false;
+
+  const loader = new THREE.TextureLoader();
+  loader.setCrossOrigin("anonymous");
+
+  try {
+    const texture = await new Promise<THREE.Texture>((resolve, reject) => {
+      loader.load(imageUrl, resolve, undefined, reject);
+    });
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.anisotropy = 8;
+
+    const material = plane.material as THREE.MeshStandardMaterial;
+    if (material.map) material.map.dispose();
+    material.map = texture;
+    material.color.setHex(0xffffff);
+    material.roughness = 1.0;
+    material.needsUpdate = true;
+    plane.userData.hasMapImagery = true;
+    plane.userData.mapStyle = mapStyle;
+    return true;
+  } catch (error) {
+    console.warn("Failed to apply ground imagery texture", error);
+    return false;
+  }
+}
+
 /**
- * Creates a grid of ground planes covering the specified bounding box.
- * Each cell gets its own satellite texture for high resolution.
- *
- * @param bbox - Bounding box defining the area to cover
- * @param projection - CityProjection class for coordinate conversion
- * @param gridSize - Number of tiles per axis (e.g. 4 → 4x4 = 16 tiles)
- * @returns Ground group with named children "ground-tile-{row}-{col}"
+ * Creates a single ground plane covering the specified bounding box.
  */
 export function createGround(
   bbox: { minLat: number; maxLat: number; minLng: number; maxLng: number },
   projection: { projectToWorld: (coord: [number, number]) => THREE.Vector3 },
   gridSize: number = 4,
 ): THREE.Group {
-  void gridSize; // kept for backwards-compat with callers
+  void gridSize;
   const group = new THREE.Group();
 
-  // Single flat plane in a neutral planning-map tone. No polygonOffset (no
-  // co-planar geometry sits on it — parks/water/roads are stacked at distinct
-  // Y heights), no transparency. Keeps the surface clean and the GPU happy.
   const topLeft = projection.projectToWorld([bbox.minLng, bbox.maxLat]);
   const bottomRight = projection.projectToWorld([bbox.maxLng, bbox.minLat]);
   const width = Math.abs(bottomRight.x - topLeft.x);
@@ -87,7 +96,7 @@ export function createGround(
   geometry.rotateX(-Math.PI / 2);
 
   const material = new THREE.MeshStandardMaterial({
-    color: 0xe8e4dd, // warm neutral — planning-map / architect's plan tone
+    color: 0xe8e4dd,
     roughness: 1.0,
     metalness: 0.0,
   });
@@ -101,15 +110,9 @@ export function createGround(
   return group;
 }
 
-/**
- * Creates a sky dome with gradient shader
- * @returns Sky mesh
- */
 export function createSky(): THREE.Mesh {
-  // Full sphere so it covers every angle — no edge clipping when orbiting
   const geometry = new THREE.SphereGeometry(45000, 32, 32);
 
-  // Gradient shader: topColor at zenith, bottomColor at horizon and below
   const material = new THREE.ShaderMaterial({
     uniforms: {
       topColor: { value: new THREE.Color(0x0077ff) },
@@ -129,7 +132,6 @@ export function createSky(): THREE.Mesh {
       varying vec3 vWorldPosition;
       void main() {
         float h = normalize(vWorldPosition).y;
-        // Above horizon: gradient from bottom→top. Below horizon: solid bottomColor.
         float t = max(pow(max(h, 0.0), 0.6), 0.0);
         gl_FragColor = vec4(mix(bottomColor, topColor, t), 1.0);
       }
@@ -138,16 +140,10 @@ export function createSky(): THREE.Mesh {
     depthWrite: false,
   });
 
-  const sky = new THREE.Mesh(geometry, material);
-  return sky;
+  return new THREE.Mesh(geometry, material);
 }
 
-/**
- * Creates sun and moon sprites that follow solar position
- * @returns Object with sun and moon meshes
- */
 export function createCelestialBodies(): { sun: THREE.Mesh; moon: THREE.Mesh } {
-  // Sun — glowing disc
   const sunGeo = new THREE.CircleGeometry(800, 32);
   const sunMat = new THREE.MeshBasicMaterial({
     color: 0xffdd44,
@@ -158,7 +154,6 @@ export function createCelestialBodies(): { sun: THREE.Mesh; moon: THREE.Mesh } {
   const sun = new THREE.Mesh(sunGeo, sunMat);
   sun.name = "celestial-sun";
 
-  // Glow ring around sun
   const glowGeo = new THREE.RingGeometry(800, 1600, 32);
   const glowMat = new THREE.MeshBasicMaterial({
     color: 0xffdd44,
@@ -167,10 +162,8 @@ export function createCelestialBodies(): { sun: THREE.Mesh; moon: THREE.Mesh } {
     opacity: 0.15,
     depthWrite: false,
   });
-  const glow = new THREE.Mesh(glowGeo, glowMat);
-  sun.add(glow);
+  sun.add(new THREE.Mesh(glowGeo, glowMat));
 
-  // Moon — smaller, white-blue disc
   const moonGeo = new THREE.CircleGeometry(500, 32);
   const moonMat = new THREE.MeshBasicMaterial({
     color: 0xddeeff,
@@ -184,32 +177,19 @@ export function createCelestialBodies(): { sun: THREE.Mesh; moon: THREE.Mesh } {
   return { sun, moon };
 }
 
-/**
- * Adds exponential fog to the scene for atmospheric depth
- * @param scene - Three.js scene to add fog to
- */
 export function setupFog(scene: THREE.Scene): void {
-  // Light blue-gray fog for atmospheric effect
   scene.fog = new THREE.FogExp2(0xccccff, 0.0015);
 }
 
-/**
- * Configures shadow settings for the renderer and light
- * @param renderer - Three.js WebGL renderer
- * @param light - Directional light for shadows
- */
 export function setupShadows(
   renderer: THREE.WebGLRenderer,
   light: THREE.DirectionalLight,
 ): void {
-  // Enable shadow mapping on renderer
   renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap; // Soft shadows for better quality
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
-  // Configure directional light for shadows
   light.castShadow = true;
 
-  // Set up shadow camera bounds
   const shadowSize = 2000;
   light.shadow.camera.left = -shadowSize;
   light.shadow.camera.right = shadowSize;
@@ -218,10 +198,7 @@ export function setupShadows(
   light.shadow.camera.near = 0.5;
   light.shadow.camera.far = 5000;
 
-  // Shadow map resolution
   light.shadow.mapSize.width = 2048;
   light.shadow.mapSize.height = 2048;
-
-  // Shadow bias to reduce artifacts
   light.shadow.bias = -0.0001;
 }

@@ -22,13 +22,22 @@ import {
 } from "@/lib/buildingClusters";
 
 // Scene management
-import { createSceneManager, handleResize } from "@/lib/sceneManager";
+import {
+  createSceneManager,
+  handleResize,
+  type SceneGroups,
+} from "@/lib/sceneManager";
 
 // Rendering systems
 import { fetchBuildings } from "@/lib/buildingData";
 import { renderBuildings } from "@/lib/buildingRenderer";
 import { renderRoads, renderTrafficHeatmap, renderCongestionMarkers, renderBarricadeMarkers } from "@/lib/roadRenderer";
-import { createGround, createSky, createCelestialBodies } from "@/lib/environmentRenderer";
+import {
+  applyGroundImagery,
+  createCelestialBodies,
+  createGround,
+  createSky,
+} from "@/lib/environmentRenderer";
 import { computeTimeOfDay, applyTimeOfDay } from "@/lib/sun/timeOfDay";
 import { analyzeShadowImpact, applyShadowOverlay as applyShadowOverlayFn } from "@/lib/sun/shadowAnalysis";
 import {
@@ -570,13 +579,16 @@ export default function ThreeMap({
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
   const controlsRef = useRef<OrbitControls | null>(null);
   const keyboardCleanupRef = useRef<(() => void) | null>(null);
-  const groupsRef = useRef<any>(null);
+  const groupsRef = useRef<SceneGroups | null>(null);
   const directionalLightRef = useRef<THREE.DirectionalLight | null>(null);
   const ambientLightRef = useRef<THREE.AmbientLight | null>(null);
   const skyMeshRef = useRef<THREE.Mesh | null>(null);
   const sunMeshRef = useRef<THREE.Mesh | null>(null);
   const moonMeshRef = useRef<THREE.Mesh | null>(null);
   const groundGroupRef = useRef<THREE.Group | null>(null);
+  const groundImageryBboxRef = useRef<[number, number, number, number] | null>(
+    null,
+  );
   const timeOfDayHourRef = useRef<number>(12);
   const dayOfYearRef = useRef<number>(80);
   // Saved bird-eye state so exit street view can return to exact pre-entry position
@@ -782,10 +794,24 @@ export default function ThreeMap({
     };
   }, [showTrafficHeatmap, trafficImpactResult, barricadedEdgeIds, isReady]);
 
-  // (satellite basemap removed — ground is a single styled plane now)
-  // mapStyle prop is kept for backwards-compat with the sidebar control but
-  // currently has no visual effect on the ground.
-  void mapStyle;
+  // Apply a static map texture to the ground plane when a basemap source is
+  // available. The neutral plane remains the fallback if texture loading fails.
+  useEffect(() => {
+    const groundGroup = groundGroupRef.current;
+    const bbox = groundImageryBboxRef.current;
+    if (!groundGroup || !bbox) return;
+
+    let cancelled = false;
+    applyGroundImagery(groundGroup, bbox, mapStyle).then((applied) => {
+      if (!cancelled && applied) {
+        console.log(`Applied ${mapStyle} basemap texture`);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [mapStyle]);
 
   // Fly to target location when prop changes
   useEffect(() => {
@@ -993,7 +1019,7 @@ export default function ThreeMap({
 
     let roadNetwork: RoadNetwork;
     let spawner: Spawner;
-    let trafficLights: TrafficLight[] = [];
+    const trafficLights: TrafficLight[] = [];
     const carMeshes: Record<string, THREE.Mesh> = {};
 
     async function initializeScene() {
@@ -1052,6 +1078,7 @@ export default function ThreeMap({
           bbox[2] + latSpan * 1.5, // north
           bbox[3] + lngSpan * 1.5, // east
         ];
+        groundImageryBboxRef.current = mapBbox;
 
         // Single styled ground plane — satellite tile imagery removed in favour
         // of a clean dark backdrop that lets the building extrusions read.
@@ -1062,6 +1089,7 @@ export default function ThreeMap({
         );
         groups.environment.add(groundGroup);
         groundGroupRef.current = groundGroup;
+        void applyGroundImagery(groundGroup, mapBbox, mapStyle);
 
         // Fetch and render buildings
         setLoadingStatus("Fetching buildings from OpenStreetMap...");

@@ -201,6 +201,7 @@ Add model and API settings to `.env.local`:
 LOCAL_LLM_BASE_URL=http://127.0.0.1:8000/v1
 LOCAL_LLM_MODEL=unsloth/Qwen3.6-35B-A3B-GGUF
 # LOCAL_LLM_API_KEY=optional_if_your_local_gateway_requires_auth
+NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN=your_mapbox_public_token
 ELEVENLABS_API_KEY=your_elevenlabs_api_key
 ```
 
