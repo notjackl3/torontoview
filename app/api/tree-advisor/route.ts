@@ -1,9 +1,7 @@
-import { GoogleGenerativeAI } from '@google/generative-ai';
 import { NextRequest, NextResponse } from 'next/server';
 import { TORONTO_TREES, TREE_DATASET_SUMMARY, TorontoTreeData } from '@/lib/editor/data/torontoTrees';
 import { TreeType, TreeConfig } from '@/lib/editor/types/buildingSpec';
-
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
+import { generateLocalCompletionWithRetry } from '@/lib/localLlm';
 
 interface BuildingContext {
   width: number;
@@ -31,12 +29,6 @@ export async function POST(request: NextRequest) {
     if (!question) {
       return NextResponse.json({ error: 'Question is required' }, { status: 400 });
     }
-
-    if (!process.env.GEMINI_API_KEY) {
-      return NextResponse.json({ error: 'Gemini API key not configured' }, { status: 500 });
-    }
-
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
 
     const buildingInfo = buildingContext
       ? `
@@ -93,31 +85,17 @@ For food/edible: recommend fruit trees or eastern redbud
 
 Respond ONLY with the JSON object, no additional text.`;
 
-    // Retry logic for flaky network
-    let result;
-    let attempts = 0;
-    const maxAttempts = 3;
-
-    while (attempts < maxAttempts) {
-      try {
-        result = await model.generateContent(prompt);
-        break;
-      } catch (fetchError) {
-        attempts++;
-        if (attempts >= maxAttempts) {
-          throw fetchError;
-        }
-        // Wait before retry (exponential backoff)
-        await new Promise(resolve => setTimeout(resolve, 1000 * attempts));
-      }
-    }
-
-    if (!result) {
-      throw new Error('Failed to get response after retries');
-    }
-
-    const response = result.response;
-    const text = response.text();
+    const text = await generateLocalCompletionWithRetry({
+      messages: [
+        {
+          role: 'system',
+          content: 'You are a Toronto tree planting advisor. Return only valid JSON matching the requested schema.',
+        },
+        { role: 'user', content: prompt },
+      ],
+      maxTokens: 1200,
+      temperature: 0.2,
+    });
 
     // Parse the JSON response
     let recommendation: TreeRecommendation;
@@ -126,7 +104,7 @@ Respond ONLY with the JSON object, no additional text.`;
       const cleanedText = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
       recommendation = JSON.parse(cleanedText);
     } catch {
-      console.error('Failed to parse Gemini response:', text);
+      console.error('Failed to parse local model response:', text);
       return NextResponse.json({
         error: 'Failed to parse AI response',
         rawResponse: text

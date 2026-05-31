@@ -1,8 +1,6 @@
-import { GoogleGenerativeAI } from '@google/generative-ai';
 import { NextRequest, NextResponse } from 'next/server';
 import { analyzeDrainage, type BuildingSpec } from '@/lib/water';
-
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
+import { generateLocalCompletionWithRetry } from '@/lib/localLlm';
 
 interface PlacedBuilding {
   id: string;
@@ -71,12 +69,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'No buildings provided for analysis' }, { status: 400 });
     }
 
-    if (!process.env.GEMINI_API_KEY) {
-      return NextResponse.json({ error: 'Gemini API key not configured' }, { status: 500 });
-    }
-
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
-
     // Run drainage analysis for each building
     const drainageResults = buildings.map((b) => {
       const widthM = Math.max(5, Math.round(b.scale.x * 10));
@@ -91,7 +83,7 @@ export async function POST(request: NextRequest) {
       return analyzeDrainage(spec);
     });
 
-    // Build rich details for Gemini: dimensions, zoning, type so it can estimate impacts
+    // Build rich details for the local model: dimensions, zoning, type so it can estimate impacts
     const buildingDetails = buildings.map((b, i) => {
       const footprint = Math.round(b.scale.x * b.scale.z * 100);
       const heightM = Math.round(b.scale.y * 3);
@@ -208,36 +200,24 @@ Be specific about the Toronto, Ontario context. Reference real features of the a
 
 Respond ONLY with the JSON object, no additional text.`;
 
-    let result;
-    let attempts = 0;
-    const maxAttempts = 3;
-
-    while (attempts < maxAttempts) {
-      try {
-        result = await model.generateContent(prompt);
-        break;
-      } catch (fetchError) {
-        attempts++;
-        if (attempts >= maxAttempts) {
-          throw fetchError;
-        }
-        await new Promise(resolve => setTimeout(resolve, 1000 * attempts));
-      }
-    }
-
-    if (!result) {
-      throw new Error('Failed to get response after retries');
-    }
-
-    const response = result.response;
-    const text = response.text();
+    const text = await generateLocalCompletionWithRetry({
+      messages: [
+        {
+          role: 'system',
+          content: 'You are an environmental and urban planning analyst. Return only valid JSON matching the requested schema.',
+        },
+        { role: 'user', content: prompt },
+      ],
+      maxTokens: 4096,
+      temperature: 0.2,
+    });
 
     let report: EnvironmentalReport;
     try {
       const cleanedText = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
       report = JSON.parse(cleanedText);
     } catch {
-      console.error('Failed to parse Gemini response:', text);
+      console.error('Failed to parse local model response:', text);
       return NextResponse.json({
         error: 'Failed to parse AI response',
         rawResponse: text

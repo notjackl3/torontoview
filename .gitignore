@@ -24,6 +24,8 @@ dist/
 # misc
 .DS_Store
 *.pem
+__pycache__/
+*.py[cod]
 
 # debug
 npm-debug.log*
@@ -48,6 +50,15 @@ public/map-data/*-raw.json
 
 # Script-local caches
 scripts/.*-cache.json
+
+# Official data cache for local/DGX RAG and fine-tuning prep
+data/official-toronto/raw/
+data/official-toronto/catalog/
+data/official-toronto/pages/
+data/official-toronto/manifest.json
+data/agent-council/
+models/
+.cache/huggingface/
 
 # Large showcase media (exceeds GitHub's 50MB file limit)
 public/showcase/live-map.gif

@@ -1,10 +1,6 @@
-import { GoogleGenerativeAI } from '@google/generative-ai';
 import { NextRequest, NextResponse } from 'next/server';
 import { BuildingConfigSchema, type BuildingConfig } from '@/lib/buildingConfig';
-
-if (!process.env.GEMINI_API_KEY) {
-  console.error('GEMINI_API_KEY environment variable is not set.');
-}
+import { generateLocalCompletionWithRetry } from '@/lib/localLlm';
 
 const SCHEMA_DESCRIPTION = `{
   "floors": number (integer, 1 to 200),
@@ -48,35 +44,18 @@ function extractJsonObject(text: string): object | null {
   return null;
 }
 
-async function callGemini(
-  prompt: string,
-  apiKey: string
-): Promise<string> {
-  const genAI = new GoogleGenerativeAI(apiKey);
-  const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
-
-  let result;
-  let attempts = 0;
-  const maxAttempts = 3;
-
-  while (attempts < maxAttempts) {
-    try {
-      result = await model.generateContent(prompt);
-      break;
-    } catch (fetchError) {
-      attempts++;
-      if (attempts >= maxAttempts) {
-        throw fetchError;
-      }
-      await new Promise((resolve) => setTimeout(resolve, 1000 * attempts));
-    }
-  }
-
-  if (!result) {
-    throw new Error('Failed to get response from Gemini after retries.');
-  }
-
-  return result.response.text();
+async function callLocalDesignModel(prompt: string): Promise<string> {
+  return generateLocalCompletionWithRetry({
+    messages: [
+      {
+        role: 'system',
+        content: 'You convert building design requests into strict JSON. Return only the JSON object requested by the user prompt.',
+      },
+      { role: 'user', content: prompt },
+    ],
+    maxTokens: 1200,
+    temperature: 0.1,
+  });
 }
 
 function buildPrompt(
@@ -127,14 +106,6 @@ User request: "${userText}"`;
 
 export async function POST(request: NextRequest) {
   try {
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      return NextResponse.json(
-        { error: 'GEMINI_API_KEY is not configured on the server.' },
-        { status: 500 }
-      );
-    }
-
     const body = await request.json();
     const { text, previousConfig } = body as {
       text: string;
@@ -150,12 +121,12 @@ export async function POST(request: NextRequest) {
 
     // First attempt
     const prompt = buildPrompt(text.trim(), previousConfig);
-    const rawResponse = await callGemini(prompt, apiKey);
+    const rawResponse = await callLocalDesignModel(prompt);
     let parsed = extractJsonObject(rawResponse);
 
     if (!parsed) {
       return NextResponse.json(
-        { error: 'Gemini returned an unparseable response. Please try again.' },
+        { error: 'Local model returned an unparseable response. Please try again.' },
         { status: 500 }
       );
     }
@@ -172,7 +143,7 @@ export async function POST(request: NextRequest) {
     let validationResult = BuildingConfigSchema.safeParse(configFields);
 
     if (!validationResult.success) {
-      // Retry: tell Gemini what went wrong
+      // Retry: tell the local model what went wrong
       const errorDetails = validationResult.error.issues
         .map((issue) => `${issue.path.join('.')}: ${issue.message}`)
         .join('; ');
@@ -182,13 +153,13 @@ export async function POST(request: NextRequest) {
 Your previous response had validation errors: ${errorDetails}
 Please fix these errors and return valid JSON matching the schema exactly.`;
 
-      const retryResponse = await callGemini(retryPrompt, apiKey);
+      const retryResponse = await callLocalDesignModel(retryPrompt);
       const retryParsed = extractJsonObject(retryResponse);
 
       if (!retryParsed) {
         return NextResponse.json(
           {
-            error: `Gemini response failed validation: ${errorDetails}`,
+            error: `Local model response failed validation: ${errorDetails}`,
           },
           { status: 400 }
         );

@@ -19,7 +19,7 @@ const features = [
     title: "Building Designer & Voice Commands",
     subtitle: "Describe a building. Watch it appear.",
     description:
-      "Design 3D buildings by speaking naturally — 'A 6-story mixed-use building, brick facade, flat roof.' Powered by Google Gemini, the system interprets your description and generates a full 3D model in seconds. Adjust dimensions, textures, windows, and rotation with precise controls.",
+      "Design 3D buildings by speaking naturally — 'A 6-story mixed-use building, brick facade, flat roof.' Powered by a local model, the system interprets your description and generates a full 3D model in seconds. Adjust dimensions, textures, windows, and rotation with precise controls.",
     video: "/showcase/build-mode.mp4",
     color: "#1a1611",
   },

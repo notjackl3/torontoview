@@ -62,7 +62,7 @@ export function VoiceDesign() {
           const spec = selectedBuilding.spec;
 
           // Reverse-map existing spec fields back to BuildingConfig so
-          // Gemini knows every current value and only changes what the user asks for.
+          // The local model knows every current value and only changes what the user asks for.
           const textureReverseMap: Record<string, string> = {
             stucco: 'smooth', concrete: 'concrete', brick: 'brick',
             wood: 'wood', glass: 'glass',
