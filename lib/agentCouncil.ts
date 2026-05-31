@@ -1,3 +1,5 @@
+import { formatEvidenceForPrompt, retrieveCouncilEvidence, type RetrievedCouncilChunk } from "@/lib/agentCouncilRetrieval";
+
 export type CouncilVote = "approve" | "approve_with_conditions" | "needs_revision" | "blocker";
 
 export interface CouncilLocation {
@@ -71,6 +73,16 @@ export interface AgentReview {
   suggestedActions: string[];
   citedSources: SourceCitation[];
   confidence: number;
+  evidence: RetrievedEvidenceSummary[];
+}
+
+export interface RetrievedEvidenceSummary {
+  id: string;
+  title: string;
+  publisher: string;
+  url: string;
+  sourceFile: string;
+  score: number;
 }
 
 export interface CouncilDecision {
@@ -90,6 +102,11 @@ export interface CouncilAudit {
   nvidiaStack: string[];
   adapterIds: string[];
   retrievalPolicy: "official_sources_only";
+  retrieval: {
+    enabled: boolean;
+    indexDir: string;
+    chunksRetrieved: number;
+  };
   corpusVersion: string;
   generatedAt: string;
 }
@@ -100,7 +117,7 @@ export interface CouncilReviewResponse {
   audit: CouncilAudit;
 }
 
-type CouncilAgentId =
+export type CouncilAgentId =
   | "building-regulations"
   | "business-bursaries"
   | "civil-infrastructure"
@@ -272,10 +289,32 @@ function toStringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
 }
 
+function evidenceToSummary(evidence: RetrievedCouncilChunk[]): RetrievedEvidenceSummary[] {
+  return evidence.map((chunk) => ({
+    id: chunk.id,
+    title: chunk.citation.title,
+    publisher: chunk.citation.publisher,
+    url: chunk.citation.url,
+    sourceFile: chunk.sourceFile,
+    score: Number(chunk.score.toFixed(2)),
+  }));
+}
+
+function uniqueCitations(sources: SourceCitation[], evidence: RetrievedCouncilChunk[]): SourceCitation[] {
+  const byId = new Map<string, SourceCitation>();
+  for (const source of sources) byId.set(source.id, source);
+  for (const chunk of evidence) {
+    const id = chunk.citation.id || chunk.id;
+    if (!byId.has(id)) byId.set(id, { ...chunk.citation, id });
+  }
+  return [...byId.values()].slice(0, 12);
+}
+
 function normalizeAgentReview(
   agent: CouncilAgentDefinition,
   raw: unknown,
-  fallback: AgentReview
+  fallback: AgentReview,
+  evidence: RetrievedCouncilChunk[]
 ): AgentReview {
   if (!raw || typeof raw !== "object") return fallback;
   const record = raw as Record<string, unknown>;
@@ -291,12 +330,13 @@ function normalizeAgentReview(
     risks: toStringArray(record.risks),
     missingInformation: toStringArray(record.missingInformation),
     suggestedActions: toStringArray(record.suggestedActions),
-    citedSources: getAgentSources(agent),
+    citedSources: uniqueCitations(getAgentSources(agent), evidence),
     confidence: clampConfidence(record.confidence, fallback.confidence),
+    evidence: evidenceToSummary(evidence),
   };
 }
 
-function buildUserPrompt(agent: CouncilAgentDefinition, request: CouncilReviewRequest): string {
+function buildUserPrompt(agent: CouncilAgentDefinition, request: CouncilReviewRequest, evidence: RetrievedCouncilChunk[]): string {
   const sources = getAgentSources(agent)
     .map((source) => `- ${source.id}: ${source.title} (${source.publisher}) ${source.url}`)
     .join("\n");
@@ -305,6 +345,9 @@ function buildUserPrompt(agent: CouncilAgentDefinition, request: CouncilReviewRe
 
 OFFICIAL SOURCE ALLOWLIST:
 ${sources}
+
+LOCAL OFFICIAL CORPUS EVIDENCE:
+${formatEvidenceForPrompt(evidence)}
 
 PROJECT CONTEXT:
 ${JSON.stringify(request, null, 2)}
@@ -321,6 +364,7 @@ Return only valid JSON with this exact shape:
 
 Rules:
 - Use only the official source allowlist for factual legal, funding, transit, or infrastructure claims.
+- Use the local corpus evidence when relevant, but do not overstate what an excerpt proves.
 - If a fact needs verification from live official pages, put it in missingInformation or suggestedActions.
 - Do not claim professional certification.
 - Prefer conservative review when information is missing.`;
@@ -375,10 +419,12 @@ async function callNimJson(messages: NimChatMessage[], adapterId: string): Promi
   }
 }
 
-function fallbackAgentReview(agent: CouncilAgentDefinition, request: CouncilReviewRequest): AgentReview {
-  const sources = getAgentSources(agent);
+function fallbackAgentReview(agent: CouncilAgentDefinition, request: CouncilReviewRequest, evidence: RetrievedCouncilChunk[] = []): AgentReview {
+  const sources = uniqueCitations(getAgentSources(agent), evidence);
   const buildings = request.buildings ?? [];
-  const projectText = `${request.projectDescription} ${JSON.stringify(request)}`.toLowerCase();
+  const evidenceSummary = evidence.length > 0
+    ? ` Retrieved ${evidence.length} relevant official corpus chunks for this review.`
+    : " No local corpus evidence was retrieved, so official-source verification is required.";
 
   if (agent.id === "building-regulations") {
     const tallBuilding = buildings.some((building) => (building.heightM ?? 0) >= 30 || (building.floors ?? 0) >= 10);
@@ -389,7 +435,7 @@ function fallbackAgentReview(agent: CouncilAgentDefinition, request: CouncilRevi
       role: agent.role,
       vote: missingZone || tallBuilding ? "needs_revision" : "approve_with_conditions",
       recommendation:
-        "Proceed only after confirming zoning, permit pathway, and Ontario Building Code implications with official City/Ontario review.",
+        `Proceed only after confirming zoning, permit pathway, and Ontario Building Code implications with official City/Ontario review.${evidenceSummary}`,
       risks: [
         ...(missingZone ? ["Zoning designation is missing for at least one proposed building."] : []),
         ...(tallBuilding ? ["Tall-building scale may trigger additional code, planning, shadow, wind, and safety review."] : []),
@@ -405,6 +451,7 @@ function fallbackAgentReview(agent: CouncilAgentDefinition, request: CouncilRevi
       ],
       citedSources: sources,
       confidence: 0.64,
+      evidence: evidenceToSummary(evidence),
     };
   }
 
@@ -416,7 +463,7 @@ function fallbackAgentReview(agent: CouncilAgentDefinition, request: CouncilRevi
       role: agent.role,
       vote: hasBusinessContext ? "approve_with_conditions" : "needs_revision",
       recommendation:
-        "There may be Ontario or Toronto business-support paths, but eligibility should be checked against official program pages before relying on funding.",
+        `There may be Ontario or Toronto business-support paths, but eligibility should be checked against official program pages before relying on funding.${evidenceSummary}`,
       risks: ["Grant and bursary availability, intake windows, and eligibility can change without notice."],
       missingInformation: [
         "Applicant legal structure and location.",
@@ -429,6 +476,7 @@ function fallbackAgentReview(agent: CouncilAgentDefinition, request: CouncilRevi
       ],
       citedSources: sources,
       confidence: hasBusinessContext ? 0.62 : 0.48,
+      evidence: evidenceToSummary(evidence),
     };
   }
 
@@ -441,7 +489,7 @@ function fallbackAgentReview(agent: CouncilAgentDefinition, request: CouncilRevi
       role: agent.role,
       vote: highTrips || roadImpacts ? "needs_revision" : "approve_with_conditions",
       recommendation:
-        "Treat traffic, transit, pedestrian access, and construction staging as approval conditions until official road and transit impacts are checked.",
+        `Treat traffic, transit, pedestrian access, and construction staging as approval conditions until official road and transit impacts are checked.${evidenceSummary}`,
       risks: [
         ...(highTrips ? ["Daily trip estimate suggests potential local congestion or curbside pressure."] : []),
         ...(roadImpacts ? ["Affected roads may require closure, staging, or right-of-way permits."] : []),
@@ -458,6 +506,7 @@ function fallbackAgentReview(agent: CouncilAgentDefinition, request: CouncilRevi
       ],
       citedSources: sources,
       confidence: 0.6,
+      evidence: evidenceToSummary(evidence),
     };
   }
 
@@ -474,7 +523,7 @@ function fallbackAgentReview(agent: CouncilAgentDefinition, request: CouncilRevi
     role: agent.role,
     vote: missingOperationalInfo ? "needs_revision" : "approve_with_conditions",
     recommendation:
-      "Validate business fit against nearby commercial activity, staffing, pricing, parking, accessibility, and expected customer access before treating the concept as market-ready.",
+      `Validate business fit against nearby commercial activity, staffing, pricing, parking, accessibility, and expected customer access before treating the concept as market-ready.${evidenceSummary}`,
     risks: [
       ...(!hasBusinessType ? ["Business type or sector is missing, so local fit cannot be evaluated."] : []),
       ...(staffCount <= 0 ? ["Staffing quantity is missing, so operating capacity and payroll exposure are unknown."] : []),
@@ -495,22 +544,24 @@ function fallbackAgentReview(agent: CouncilAgentDefinition, request: CouncilRevi
     ],
     citedSources: sources,
     confidence: missingOperationalInfo ? 0.52 : 0.66,
+    evidence: evidenceToSummary(evidence),
   };
 }
 
 async function reviewWithAgent(agent: CouncilAgentDefinition, request: CouncilReviewRequest): Promise<AgentReview> {
-  const fallback = fallbackAgentReview(agent, request);
+  const evidence = await retrieveCouncilEvidence(agent.id, request);
+  const fallback = fallbackAgentReview(agent, request, evidence);
   if (!process.env.NVIDIA_NIM_BASE_URL) return fallback;
 
   try {
     const raw = await callNimJson(
       [
         { role: "system", content: agent.systemPrompt },
-        { role: "user", content: buildUserPrompt(agent, request) },
+        { role: "user", content: buildUserPrompt(agent, request, evidence) },
       ],
       agent.adapterId
     );
-    return normalizeAgentReview(agent, raw, fallback);
+    return normalizeAgentReview(agent, raw, fallback, evidence);
   } catch (error) {
     console.error(`${agent.id} NIM review failed:`, error);
     return fallback;
@@ -565,6 +616,7 @@ function decideCouncil(agents: AgentReview[]): CouncilDecision {
 export async function reviewCouncil(request: CouncilReviewRequest): Promise<CouncilReviewResponse> {
   const agents = await Promise.all(AGENTS.map((agent) => reviewWithAgent(agent, request)));
   const runtime = process.env.NVIDIA_NIM_BASE_URL ? "nvidia-nim" : "deterministic-fallback";
+  const chunksRetrieved = agents.reduce((total, agent) => total + agent.evidence.length, 0);
 
   return {
     agents,
@@ -576,6 +628,13 @@ export async function reviewCouncil(request: CouncilReviewRequest): Promise<Coun
       nvidiaStack: ["NVIDIA DGX Spark", "NVIDIA NIM", "NVIDIA NeMo LoRA", "official-source RAG"],
       adapterIds: AGENTS.map((agent) => agent.adapterId),
       retrievalPolicy: "official_sources_only",
+      retrieval: {
+        enabled: chunksRetrieved > 0,
+        indexDir: process.env.AGENT_COUNCIL_DATA_DIR
+          ? `${process.env.AGENT_COUNCIL_DATA_DIR.replace(/\/$/, "")}/index`
+          : "data/agent-council/index",
+        chunksRetrieved,
+      },
       corpusVersion: CORPUS_VERSION,
       generatedAt: new Date().toISOString(),
     },

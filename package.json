@@ -8,6 +8,7 @@
     "start": "next start",
     "fetch:toronto-data": "node scripts/fetch-official-toronto-data.mjs",
     "prepare:agent-council-corpus": "node scripts/prepare-agent-council-corpus.mjs",
+    "build:agent-council-index": "node scripts/build-agent-council-index.mjs",
     "lint": "eslint"
   },
   "dependencies": {
