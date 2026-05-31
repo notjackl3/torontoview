@@ -16,10 +16,10 @@ const MAX_ZIP_FILES = Number(process.env.AGENT_COUNCIL_MAX_ZIP_FILES || 16);
 const AGENT_BY_GROUP = {
   "building-regulations": "building-regulations",
   "business-bursaries": "business-bursaries",
-  "lot-business-history": "business-bursaries",
+  "lot-business-history": "business-viability",
   "civil-infrastructure": "civil-infrastructure",
   "population": "civil-infrastructure",
-  "commercial-recreation-hotspots": "civil-infrastructure",
+  "commercial-recreation-hotspots": "business-viability",
 };
 
 function sha256(value) {
@@ -384,6 +384,20 @@ function trainingExamples() {
           risks: ["Program availability and deadlines change frequently.", "Business licence records do not prove land ownership."],
           missingInformation: ["Applicant legal structure", "Sector", "Employee count", "Project budget", "Current official intake dates"],
           suggestedActions: ["Check Ontario business grants and City of Toronto business support pages", "Use municipal licence data only as business activity context, not ownership proof"],
+        }) },
+      ],
+    },
+    {
+      agent: "business-viability",
+      messages: [
+        { role: "system", content: "You are the Local Business Viability Agent. Use official Toronto business, BIA, employment, parking, access, and commercial activity sources." },
+        { role: "user", content: "Review a proposed cafe with 8 staff, $6-$18 product pricing, limited parking, and several nearby food businesses." },
+        { role: "assistant", content: JSON.stringify({
+          vote: "needs_revision",
+          recommendation: "Validate nearby competitors, pricing fit, staffing capacity, parking, accessibility, and customer access before treating the cafe as launch-ready.",
+          risks: ["Nearby comparable businesses may indicate strong demand or saturation.", "Limited parking and unclear accessibility can reduce customer reach and staff access."],
+          missingInformation: ["Nearby business licence and BIA context", "Expected daily customers and hours", "Accessible entrance, service counter, washroom, and route details", "Parking and loading plan"],
+          suggestedActions: ["Compare official nearby business and employment records", "Build a staffing, pricing, parking, and accessibility checklist", "Adjust product mix and staffing assumptions after local market review"],
         }) },
       ],
     },

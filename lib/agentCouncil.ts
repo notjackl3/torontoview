@@ -21,10 +21,18 @@ export interface CouncilBuilding {
 export interface BusinessContext {
   applicantType?: string;
   sector?: string;
+  businessType?: string;
   projectStage?: string;
   budgetCad?: number;
   fundingGoal?: string;
   employeeCount?: number;
+  staffQuantity?: number;
+  averageProductPriceCad?: number;
+  priceRangeCad?: { min?: number; max?: number };
+  expectedDailyCustomers?: number;
+  nearbyCompetitors?: string[];
+  parkingSpaces?: number;
+  accessibilityFeatures?: string[];
 }
 
 export interface TransportContext {
@@ -92,7 +100,11 @@ export interface CouncilReviewResponse {
   audit: CouncilAudit;
 }
 
-type CouncilAgentId = "building-regulations" | "business-bursaries" | "civil-infrastructure";
+type CouncilAgentId =
+  | "building-regulations"
+  | "business-bursaries"
+  | "civil-infrastructure"
+  | "business-viability";
 
 interface CouncilAgentDefinition {
   id: CouncilAgentId;
@@ -165,6 +177,24 @@ const OFFICIAL_SOURCES: Record<string, SourceCitation> = {
     publisher: "City of Toronto",
     url: "https://open.toronto.ca/",
   },
+  torontoBusinessLicences: {
+    id: "toronto-business-licences",
+    title: "Municipal Licensing and Standards business licences and permits",
+    publisher: "City of Toronto Open Data",
+    url: "https://open.toronto.ca/",
+  },
+  torontoEmploymentSurvey: {
+    id: "toronto-employment-survey",
+    title: "Toronto Employment Survey summary tables",
+    publisher: "City of Toronto Open Data",
+    url: "https://open.toronto.ca/",
+  },
+  torontoBusinessImprovementAreas: {
+    id: "toronto-business-improvement-areas",
+    title: "Business Improvement Areas",
+    publisher: "City of Toronto Open Data",
+    url: "https://open.toronto.ca/",
+  },
 };
 
 const AGENTS: CouncilAgentDefinition[] = [
@@ -194,6 +224,21 @@ const AGENTS: CouncilAgentDefinition[] = [
     sourceIds: ["ttcService", "metrolinx", "torontoRoadRestrictions", "torontoOpenData"],
     systemPrompt:
       "You are a civil infrastructure reviewer for Toronto. Use only official municipal, TTC, Metrolinx, and open data sources supplied in context. Review traffic, transit, accessibility, construction staging, drainage, public realm, and safety concerns. You provide planning support, not a stamped engineering report.",
+  },
+  {
+    id: "business-viability",
+    name: "Local Business Viability Agent",
+    role: "Market and operating-model reviewer for nearby businesses, business type fit, staffing, product pricing, parking, and accessibility.",
+    adapterId: "local-business-viability-toronto-lora",
+    sourceIds: [
+      "torontoBusinessLicences",
+      "torontoEmploymentSurvey",
+      "torontoBusinessImprovementAreas",
+      "torontoOpenData",
+      "torontoRoadRestrictions",
+    ],
+    systemPrompt:
+      "You are a local business viability reviewer for Toronto. Use official municipal open data and supplied project context to assess nearby business activity, business type fit, staffing assumptions, product pricing, parking, accessibility, customer access, and operational risks. Do not invent competitor counts, prices, or demand; flag missing market research when official or supplied evidence is insufficient.",
   },
 ];
 
@@ -387,31 +432,69 @@ function fallbackAgentReview(agent: CouncilAgentDefinition, request: CouncilRevi
     };
   }
 
-  const highTrips = (request.transportContext?.dailyTripsEstimate ?? 0) > 100;
-  const roadImpacts = Boolean(request.transportContext?.affectedRoads?.length);
+  if (agent.id === "civil-infrastructure") {
+    const highTrips = (request.transportContext?.dailyTripsEstimate ?? 0) > 100;
+    const roadImpacts = Boolean(request.transportContext?.affectedRoads?.length);
+    return {
+      id: agent.id,
+      name: agent.name,
+      role: agent.role,
+      vote: highTrips || roadImpacts ? "needs_revision" : "approve_with_conditions",
+      recommendation:
+        "Treat traffic, transit, pedestrian access, and construction staging as approval conditions until official road and transit impacts are checked.",
+      risks: [
+        ...(highTrips ? ["Daily trip estimate suggests potential local congestion or curbside pressure."] : []),
+        ...(roadImpacts ? ["Affected roads may require closure, staging, or right-of-way permits."] : []),
+        "Construction could disrupt sidewalks, accessibility routes, deliveries, TTC access, or emergency access.",
+      ],
+      missingInformation: [
+        "Nearest TTC and regional transit stops or routes.",
+        "Construction staging plan and right-of-way occupancy needs.",
+        "Accessibility, pedestrian, cycling, loading, and emergency access impacts.",
+      ],
+      suggestedActions: [
+        "Check official road restriction and TTC/Metrolinx service information for the project area.",
+        "Run a traffic and access review before public consultation or permit submission.",
+      ],
+      citedSources: sources,
+      confidence: 0.6,
+    };
+  }
+
+  const staffCount = request.businessContext?.staffQuantity ?? request.businessContext?.employeeCount ?? 0;
+  const hasPricing = Boolean(request.businessContext?.averageProductPriceCad || request.businessContext?.priceRangeCad);
+  const hasParking = typeof request.businessContext?.parkingSpaces === "number";
+  const hasBusinessType = Boolean(request.businessContext?.businessType || request.businessContext?.sector);
+  const accessibilityFeatures = request.businessContext?.accessibilityFeatures ?? request.transportContext?.accessibilityConcerns ?? [];
+  const missingOperationalInfo = !hasBusinessType || staffCount <= 0 || !hasPricing || !hasParking || accessibilityFeatures.length === 0;
+
   return {
     id: agent.id,
     name: agent.name,
     role: agent.role,
-    vote: highTrips || roadImpacts ? "needs_revision" : "approve_with_conditions",
+    vote: missingOperationalInfo ? "needs_revision" : "approve_with_conditions",
     recommendation:
-      "Treat traffic, transit, pedestrian access, and construction staging as approval conditions until official road and transit impacts are checked.",
+      "Validate business fit against nearby commercial activity, staffing, pricing, parking, accessibility, and expected customer access before treating the concept as market-ready.",
     risks: [
-      ...(highTrips ? ["Daily trip estimate suggests potential local congestion or curbside pressure."] : []),
-      ...(roadImpacts ? ["Affected roads may require closure, staging, or right-of-way permits."] : []),
-      "Construction could disrupt sidewalks, accessibility routes, deliveries, TTC access, or emergency access.",
+      ...(!hasBusinessType ? ["Business type or sector is missing, so local fit cannot be evaluated."] : []),
+      ...(staffCount <= 0 ? ["Staffing quantity is missing, so operating capacity and payroll exposure are unknown."] : []),
+      ...(!hasPricing ? ["Product pricing is missing, so affordability and revenue assumptions cannot be tested."] : []),
+      ...(!hasParking ? ["Parking supply is missing, so customer and staff access risk cannot be evaluated."] : []),
+      ...(accessibilityFeatures.length === 0 ? ["Accessibility features are missing, which can limit customer access and compliance planning."] : []),
     ],
     missingInformation: [
-      "Nearest TTC and regional transit stops or routes.",
-      "Construction staging plan and right-of-way occupancy needs.",
-      "Accessibility, pedestrian, cycling, loading, and emergency access impacts.",
+      "Nearby comparable businesses and business improvement area context.",
+      "Business type, target customer, expected daily customers, staff quantity, and operating hours.",
+      "Product or service price range and affordability assumptions.",
+      "Parking, loading, transit access, and accessible entrance/washroom/service details.",
     ],
     suggestedActions: [
-      "Check official road restriction and TTC/Metrolinx service information for the project area.",
-      "Run a traffic and access review before public consultation or permit submission.",
+      "Compare the proposal against nearby business licence, BIA, and employment survey records.",
+      "Create a simple staffing, pricing, parking, and accessibility operating checklist before launch.",
+      "Use customer access findings to refine hours, staffing levels, product mix, and pricing assumptions.",
     ],
     citedSources: sources,
-    confidence: 0.6,
+    confidence: missingOperationalInfo ? 0.52 : 0.66,
   };
 }
 
@@ -468,6 +551,7 @@ function decideCouncil(agents: AgentReview[]): CouncilDecision {
     conditions,
     growthOpportunities: [
       "Use the bursaries agent output to create a live official-source funding checklist.",
+      "Use the business viability agent output to tune product mix, pricing, staffing, parking, and accessibility assumptions.",
       "Package the regulatory and infrastructure findings into a consultation-ready project brief.",
     ],
     nextSteps: [
