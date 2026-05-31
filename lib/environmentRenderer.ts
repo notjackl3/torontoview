@@ -115,8 +115,8 @@ export function createSky(): THREE.Mesh {
 
   const material = new THREE.ShaderMaterial({
     uniforms: {
-      topColor: { value: new THREE.Color(0x0077ff) },
-      bottomColor: { value: new THREE.Color(0xffffff) },
+      topColor: { value: new THREE.Color(0x66b8ff) },
+      bottomColor: { value: new THREE.Color(0xf8fcff) },
     },
     vertexShader: `
       varying vec3 vWorldPosition;
@@ -178,7 +178,7 @@ export function createCelestialBodies(): { sun: THREE.Mesh; moon: THREE.Mesh } {
 }
 
 export function setupFog(scene: THREE.Scene): void {
-  scene.fog = new THREE.FogExp2(0xccccff, 0.0015);
+  scene.fog = new THREE.FogExp2(0xeaf6ff, 0.000004);
 }
 
 export function setupShadows(

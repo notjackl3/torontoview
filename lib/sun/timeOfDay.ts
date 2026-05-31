@@ -118,14 +118,14 @@ export function computeTimeOfDay(hour: number, dayOfYear: number = 80): TimeOfDa
   let fogDensity: number;
   let groundTint: THREE.Color;
 
-  // Atmospheric fog hides the void where map data ends. Tuned so close-up detail
-  // stays crisp and only the far horizon (near maxDistance 12000u) hazes out.
+  // Atmospheric fog hides the void where map data ends. Keep it very light so
+  // daylight views stay crisp while the far horizon still has a soft falloff.
   if (hour >= 8 && hour < 17) {
-    fogDensity = 0.00008; // day — barely perceptible up close
+    fogDensity = 0.000004; // day - about 5% of the previous haze
   } else if ((hour >= 5 && hour < 8) || (hour >= 17 && hour < 21)) {
-    fogDensity = 0.00014; // dawn / dusk
+    fogDensity = 0.000007; // dawn / dusk
   } else {
-    fogDensity = 0.00025; // night — still hides the void in shadow
+    fogDensity = 0.0000125; // night
   }
 
   if (hour < 5) {
@@ -170,32 +170,32 @@ export function computeTimeOfDay(hour: number, dayOfYear: number = 80): TimeOfDa
     sunIntensity = lerp(1.5, 1.6, t);
     ambientColor = lerpColor(new THREE.Color(0xbbccdd), new THREE.Color(0xc0d0e8), t);
     ambientIntensity = lerp(0.9, 0.9, t);
-    skyTop = lerpColor(new THREE.Color(0x4488cc), new THREE.Color(0x3377cc), t);
-    skyBottom = lerpColor(new THREE.Color(0xddeeff), new THREE.Color(0xeef4ff), t);
-    bgColor = lerpColor(new THREE.Color(0xbbccdd), new THREE.Color(0xc8ddf0), t);
+    skyTop = lerpColor(new THREE.Color(0x5fa8e8), new THREE.Color(0x66b8ff), t);
+    skyBottom = lerpColor(new THREE.Color(0xeaf6ff), new THREE.Color(0xf8fcff), t);
+    bgColor = lerpColor(new THREE.Color(0xdff2ff), new THREE.Color(0xeaf6ff), t);
     fogColor = bgColor;
     groundTint = lerpColor(new THREE.Color(0xffeedd), new THREE.Color(0xffffff), t);
   } else if (hour < 15) {
     // Midday — neutral, bright
     sunColor = new THREE.Color(0xfff8f0);
-    sunIntensity = 1.6;
-    ambientColor = new THREE.Color(0xc0d0e8);
-    ambientIntensity = 0.9;
-    skyTop = new THREE.Color(0x3377cc);
-    skyBottom = new THREE.Color(0xeef4ff);
-    bgColor = new THREE.Color(0xc8ddf0);
+    sunIntensity = 1.75;
+    ambientColor = new THREE.Color(0xd9ecff);
+    ambientIntensity = 1.05;
+    skyTop = new THREE.Color(0x66b8ff);
+    skyBottom = new THREE.Color(0xf8fcff);
+    bgColor = new THREE.Color(0xeaf6ff);
     fogColor = bgColor;
     groundTint = new THREE.Color(0xffffff);
   } else if (hour < 17.5) {
     // Afternoon → pre-sunset
     const t = (hour - 15) / 2.5;
     sunColor = lerpColor(new THREE.Color(0xfff8f0), new THREE.Color(0xffbb66), t);
-    sunIntensity = lerp(1.6, 1.3, t);
-    ambientColor = lerpColor(new THREE.Color(0xc0d0e8), new THREE.Color(0xddbb88), t);
-    ambientIntensity = lerp(0.9, 1.0, t);
-    skyTop = lerpColor(new THREE.Color(0x3377cc), new THREE.Color(0x4477bb), t);
-    skyBottom = lerpColor(new THREE.Color(0xeef4ff), new THREE.Color(0xffcc88), t);
-    bgColor = lerpColor(new THREE.Color(0xc8ddf0), new THREE.Color(0xccbb99), t);
+    sunIntensity = lerp(1.75, 1.3, t);
+    ambientColor = lerpColor(new THREE.Color(0xd9ecff), new THREE.Color(0xddbb88), t);
+    ambientIntensity = lerp(1.05, 1.0, t);
+    skyTop = lerpColor(new THREE.Color(0x66b8ff), new THREE.Color(0x4477bb), t);
+    skyBottom = lerpColor(new THREE.Color(0xf8fcff), new THREE.Color(0xffcc88), t);
+    bgColor = lerpColor(new THREE.Color(0xeaf6ff), new THREE.Color(0xccbb99), t);
     fogColor = bgColor;
     groundTint = lerpColor(new THREE.Color(0xffffff), new THREE.Color(0xffddbb), t);
   } else if (hour < 19.5) {
