@@ -8,6 +8,7 @@ import { listOsmPlans, getOsmPlanId, setOsmPlanId } from "@/lib/osmBusinessPlans
 import { computePlanMetrics, type BusinessPlan } from "@/lib/businessPlan";
 import type { BuildingClusterIndex } from "@/lib/buildingClusters";
 import ThreeMap from "@/components/ThreeMap";
+import { ProviderBadge } from "@/components/ProviderBadge";
 import { formatHour, getPresetHour, type TimePreset } from "@/lib/sun/timeOfDay";
 import {
   Landmark,
@@ -2018,6 +2019,9 @@ function MapPageContent() {
               >
                 <ChevronLeft size={16} className="text-slate-500" />
               </button>
+            </div>
+            <div className="mb-3">
+              <ProviderBadge className="w-full justify-start" />
             </div>
             {/* Map Style Toggle */}
             <div className="mb-4">

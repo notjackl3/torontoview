@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { generateLocalCompletionWithRetry } from "@/lib/localLlm";
+import { generateCompletionText } from "@/lib/llm/client";
+import { extractJsonObject, safeStringify } from "@/lib/llm/json";
+import { resolveLlmPreferences } from "@/lib/llm/preferences";
 
 /**
  * On-demand competitor analysis for a single nearby business. The map view
@@ -71,34 +73,6 @@ Rules:
 - differentiators: realistic ways the founder can stand out, grounded in
   their plan's value prop and price tier.
 - recommendation: an action the founder should take this month.`;
-
-function safeStringify(value: unknown, maxChars: number): string {
-  try {
-    const s = JSON.stringify(value, null, 2);
-    if (s.length <= maxChars) return s;
-    return s.slice(0, maxChars) + "\n…(truncated)";
-  } catch {
-    return String(value).slice(0, maxChars);
-  }
-}
-
-function extractJsonObject(raw: string): unknown | null {
-  // The local LLM sometimes wraps output in ```json fences or adds a short
-  // preamble. Strip both before JSON.parse.
-  const stripped = raw
-    .replace(/^```(?:json)?\s*/i, "")
-    .replace(/```\s*$/i, "")
-    .trim();
-  const start = stripped.indexOf("{");
-  const end = stripped.lastIndexOf("}");
-  if (start === -1 || end === -1 || end <= start) return null;
-  const slice = stripped.slice(start, end + 1);
-  try {
-    return JSON.parse(slice);
-  } catch {
-    return null;
-  }
-}
 
 // Models love to vary phrasing — "Medium" instead of "moderate", "MED",
 // "mid", etc. Normalize to our three buckets.
@@ -214,9 +188,13 @@ export async function POST(
     "Return JSON only.",
   ].join("\n");
 
+  const prefs = resolveLlmPreferences(request);
+
   let raw: string;
   try {
-    raw = await generateLocalCompletionWithRetry({
+    raw = await generateCompletionText({
+      provider: prefs.provider,
+      model: prefs.model,
       messages: [
         { role: "system", content: SYSTEM_PROMPT },
         { role: "user", content: userMessage },

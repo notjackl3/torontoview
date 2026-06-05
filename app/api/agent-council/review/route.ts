@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { reviewCouncil, type CouncilReviewRequest } from "@/lib/agentCouncil";
+import { resolveLlmPreferences } from "@/lib/llm/preferences";
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -39,7 +40,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: validated }, { status: 400 });
     }
 
-    const review = await reviewCouncil(validated);
+    const prefs = resolveLlmPreferences(request);
+    const review = await reviewCouncil(validated, prefs);
 
     return NextResponse.json(review);
   } catch (error) {

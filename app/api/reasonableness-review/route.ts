@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { generateLocalCompletionWithRetry } from "@/lib/localLlm";
+import { generateCompletionText } from "@/lib/llm/client";
+import { extractJsonObject } from "@/lib/llm/json";
+import { resolveLlmPreferences } from "@/lib/llm/preferences";
 
 const RequestSchema = z.object({
   building: z.object({
@@ -74,7 +76,10 @@ export async function POST(request: NextRequest) {
     const input = parsed.data;
 
     const userPrompt = JSON.stringify(input, null, 2);
-    const raw = await generateLocalCompletionWithRetry({
+    const prefs = resolveLlmPreferences(request);
+    const raw = await generateCompletionText({
+      provider: prefs.provider,
+      model: prefs.model,
       messages: [
         { role: "system", content: SYSTEM_PROMPT },
         {
@@ -86,25 +91,25 @@ export async function POST(request: NextRequest) {
       maxTokens: 1200,
     });
 
-    // The model may wrap JSON in ``` fences. Strip and parse.
-    const trimmed = raw
-      .trim()
-      .replace(/^```(?:json)?/i, "")
-      .replace(/```$/i, "")
-      .trim();
-    let parsedReview: ReasonablenessReview;
-    try {
-      parsedReview = ResponseSchema.parse(JSON.parse(trimmed));
-    } catch (err) {
+    const parsedJson = extractJsonObject(raw);
+    if (!parsedJson) {
+      return NextResponse.json(
+        { error: "Model returned unparseable JSON", raw },
+        { status: 502 },
+      );
+    }
+    const validated = ResponseSchema.safeParse(parsedJson);
+    if (!validated.success) {
       return NextResponse.json(
         {
           error: "Model returned malformed JSON",
-          detail: err instanceof Error ? err.message : String(err),
+          detail: validated.error.message,
           raw,
         },
         { status: 502 },
       );
     }
+    const parsedReview: ReasonablenessReview = validated.data;
 
     return NextResponse.json(parsedReview);
   } catch (error) {

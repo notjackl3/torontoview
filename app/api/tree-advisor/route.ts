@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { TORONTO_TREES, TREE_DATASET_SUMMARY, TorontoTreeData } from '@/lib/editor/data/torontoTrees';
 import { TreeType, TreeConfig } from '@/lib/editor/types/buildingSpec';
-import { generateLocalCompletionWithRetry } from '@/lib/localLlm';
+import { generateCompletionText } from '@/lib/llm/client';
+import { extractJsonObject } from '@/lib/llm/json';
+import { resolveLlmPreferences } from '@/lib/llm/preferences';
 
 interface BuildingContext {
   width: number;
@@ -85,7 +87,10 @@ For food/edible: recommend fruit trees or eastern redbud
 
 Respond ONLY with the JSON object, no additional text.`;
 
-    const text = await generateLocalCompletionWithRetry({
+    const prefs = resolveLlmPreferences(request);
+    const text = await generateCompletionText({
+      provider: prefs.provider,
+      model: prefs.model,
       messages: [
         {
           role: 'system',
@@ -97,19 +102,15 @@ Respond ONLY with the JSON object, no additional text.`;
       temperature: 0.2,
     });
 
-    // Parse the JSON response
-    let recommendation: TreeRecommendation;
-    try {
-      // Clean up the response - remove markdown code blocks if present
-      const cleanedText = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-      recommendation = JSON.parse(cleanedText);
-    } catch {
-      console.error('Failed to parse local model response:', text);
+    const parsed = extractJsonObject(text);
+    if (!parsed) {
+      console.error('Failed to parse model response:', text);
       return NextResponse.json({
         error: 'Failed to parse AI response',
-        rawResponse: text
+        rawResponse: text,
       }, { status: 500 });
     }
+    const recommendation = parsed as TreeRecommendation;
 
     // Validate the tree IDs
     const validTreeIds = TORONTO_TREES.map(t => t.id);

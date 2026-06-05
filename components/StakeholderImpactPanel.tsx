@@ -18,6 +18,7 @@ import type {
   ImpactRadius,
   ImpactSeverity,
 } from "@/lib/stakeholderImpact";
+import { InsightButton } from "./InsightButton";
 
 interface StakeholderImpactPanelProps {
   analysis: StakeholderAnalysis | null;
@@ -172,6 +173,36 @@ export default function StakeholderImpactPanel({
 
       {analysis && s && (
         <div className="space-y-4">
+          <InsightButton
+            endpoint="/api/insights/wind-noise"
+            label="Generate NVIDIA stakeholder recommendation"
+            buildPayload={() => ({
+              projectDescription: "Toronto building proposal — stakeholder / wind-noise review",
+              simulation: {
+                totalAffected: s.totalAffected,
+                radiusMeters: s.radiusMeters,
+                residentialAffected: s.residentialAffected,
+                commercialAffected: s.commercialAffected,
+                institutionalAffected: s.institutionalAffected,
+                significantSunlightLoss: s.significantSunlightLoss,
+                highNoiseExposure: s.highNoiseExposure,
+                highViewObstruction: s.highViewObstruction,
+                impactByCategory: s.impactByCategory,
+                topImpacts: analysis.impacts
+                  .filter((i) => i.overallSeverity !== "none")
+                  .slice(0, 10)
+                  .map((i) => ({
+                    type: i.type,
+                    distanceMeters: Math.round(i.distanceMeters),
+                    shadowImpact: i.shadowImpact,
+                    noiseImpact: i.noiseImpact,
+                    viewObstruction: i.viewObstruction,
+                    overallSeverity: i.overallSeverity,
+                  })),
+              },
+            })}
+          />
+
           {/* Summary cards */}
           <div className="grid grid-cols-2 gap-2 items-stretch">
             <SummaryCard

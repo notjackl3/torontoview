@@ -4,6 +4,8 @@
 
 Built for the City of Toronto at Nvidia Spark Hackathon 2026.
 
+> **Built on the NVIDIA AI stack.** Reasoning runs on NVIDIA NIM (build.nvidia.com) by default — Nemotron, Llama-3.3-Nemotron, and a Toronto-specific LoRA fine-tuned on DGX Spark. Every LLM-backed feature (voice design, environmental report, agent council, the new AI Insights layer over the simulations) routes through a unified provider abstraction with a `/settings` model picker. See [`docs/NVIDIA_STACK.md`](./docs/NVIDIA_STACK.md).
+
 ---
 
 ## 1. Project Overview
@@ -12,8 +14,8 @@ TorontoView is a real-time, voice-driven urban planning simulator built on top o
 
 The platform combines three core technologies into a single interactive experience:
 
+- **NVIDIA AI stack** provides the reasoning layer — NVIDIA NIM (build.nvidia.com) for hosted inference against the Nemotron family, plus a self-hosted DGX Spark endpoint serving a domain-specific Toronto Council LoRA. Every LLM-backed feature in TorontoView routes through this stack: voice building design, environmental impact reports, the four-agent council that reviews proposals against Toronto regulations, tree recommendations, and the new **AI Insights** layer that pipes deterministic simulation outputs (drainage, traffic, shadow, wind/noise) through an NVIDIA-served model to generate concrete recommendations.
 - **ElevenLabs** provides the voice and audio layer -- real-time narration of building designs, AI-generated sound effects for every editor action, and spoken feedback that makes the tool accessible to users who cannot or prefer not to read dense technical output.
-- **Local Qwen/Gemma models** hosted through an OpenAI-compatible endpoint serve as the reasoning engine -- interpreting freeform speech, resolving ambiguity, generating structured building parameters, producing environmental impact reports, and recommending tree species from Toronto's municipal database.
 - **Three.js and React Three Fiber** power a full 3D simulation of Toronto with over 100 vehicles, real traffic signals, A* pathfinding, construction noise propagation, and zoning overlays.
 
 The result is a platform where anyone -- regardless of technical skill, visual ability, or planning expertise -- can participate in shaping their city.
@@ -23,6 +25,8 @@ The result is a platform where anyone -- regardless of technical skill, visual a
 ## 2. Live Demo
 
 **Try it now:** [https://torontoview.vercel.app](https://torontoview.vercel.app)
+
+**Watch the demo:** [https://youtu.be/3HSv8uiZT9Y](https://youtu.be/3HSv8uiZT9Y)
 
 ### What to try first
 
@@ -37,6 +41,35 @@ The result is a platform where anyone -- regardless of technical skill, visual a
 6. **Zoom into a street** -- Scroll in close to street level and hear an AI-generated metropolitan city ambiance produced by ElevenLabs in real time. The volume fades smoothly based on how close you are to the ground.
 7. **Generate an Environmental Report** -- See carbon footprint, noise levels, habitat impact, and community effects analyzed by a local model.
 8. **Ask the Tree Advisor** -- Get tree recommendations from Toronto's official planting program, powered by a local model.
+
+### Screenshots
+
+**3D Toronto map with environmental layers and live metrics**
+![Map overview](docs/screenshots/01-map-overview.png)
+
+**Street-level night view at the CN Tower**
+![CN Tower at night](docs/screenshots/02-cn-tower-night.png)
+
+**Guided onboarding — pick how you'll take the site (existing building, demolish & rebuild, or empty land)**
+![Business onboarding](docs/screenshots/03-business-onboarding.png)
+
+**Site analysis — proposed building rendered in 3D with project cost, lease, and construction estimates**
+![Site analysis](docs/screenshots/04-site-analysis.png)
+
+**Competitor analysis — nearby businesses by category within a configurable radius**
+![Competitor analysis](docs/screenshots/05-competitor-analysis.png)
+
+**Grants & funding matches — relevant municipal and provincial programs surfaced from official sources**
+![Grants and funding](docs/screenshots/06-grants-funding.png)
+
+**Zoning & permits — required permits, blockers, and an Ask-AI prompt grounded in the zoning context**
+![Zoning, permits, and Ask AI](docs/screenshots/07-zoning-permits-ai.png)
+
+**3D Building Editor — voice-driven design, dimension sliders, and live preview**
+![Building editor](docs/screenshots/08-building-editor.png)
+
+**Construction timeline — phased build progress on the map with an active timeline scrubber**
+![Construction timeline](docs/screenshots/09-construction-timeline.png)
 
 ---
 
@@ -137,9 +170,20 @@ This creates an immersive experience where zooming into Toronto's streets feels 
 
 ---
 
-## 6. Local Model Integration
+## 6. NVIDIA AI Reasoning Layer
 
-TorontoView uses a local OpenAI-compatible model endpoint for three core features. In development this can be Qwen, Gemma, vLLM, NIM, or any compatible server configured with `LOCAL_LLM_BASE_URL` and `LOCAL_LLM_MODEL`.
+TorontoView routes every LLM call through a unified multi-provider client (`lib/llm/`). The default provider is **NVIDIA NIM** at `https://integrate.api.nvidia.com/v1`; users can switch to the self-hosted **NVIDIA DGX** endpoint (which serves the agent-council LoRA fine-tuned in `training/agent-council-lora/`), a local llama.cpp / vLLM server, or hosted OpenAI from the `/settings` page. Selection is persisted in `localStorage` and forwarded to API routes via `x-tv-provider` / `x-tv-model` headers, so the user's pick steers every feature consistently.
+
+### Provider catalog (selectable from `/settings`)
+
+- `meta/llama-3.3-nemotron-super-49b-v1` — flagship reasoning model for project briefs and structured output
+- `nvidia/llama-3.1-nemotron-70b-instruct` — general instruction-tuned chat
+- `nvidia/nemotron-mini-4b-instruct` — low-latency voice-design parsing
+- `mistralai/mixtral-8x22b-instruct-v0.1` — Mixtral via NIM
+- `toronto-council-lora` — our DGX-trained LoRA, served from the on-prem `nvidia-dgx` provider
+- `unsloth/Qwen3.6-35B-A3B-GGUF` (local dev fallback) and `gpt-4o-mini` (OpenAI fallback)
+
+### LLM-backed features
 
 ### 6.1 Voice Design Parser (`/api/design`)
 
@@ -152,6 +196,22 @@ Generates a full environmental and societal impact report for buildings placed o
 ### 6.3 Tree Advisor (`/api/tree-advisor`)
 
 Recommends tree species from Toronto's Neighbourhood Tree Planting Program -- a real municipal dataset of 40+ species. Returns species selection, planting density, radius, reasoning, and tips. All recommendations are validated against the official Toronto dataset.
+
+### 6.4 Agent Council (`/api/agent-council/review`) — Toronto Council LoRA on DGX
+
+Four specialized advisors (Building Regulations, Business Bursaries, Business Viability, Civil Infrastructure) review a proposal in parallel and vote. When `DGX_INFERENCE_BASE_URL` is set, this route uses the **Toronto Council LoRA** fine-tuned on DGX Spark from Toronto's official municipal corpus; otherwise it falls back to NIM. Behavior lives in the LoRA, facts live in the RAG corpus under `data/agent-council/` — see `training/agent-council-lora/README.md`.
+
+### 6.5 AI Insights — NVIDIA-served reasoning over deterministic simulations
+
+The deterministic water/drainage, traffic, shadow, and wind/noise simulations run locally. Each panel exposes an **Ask NVIDIA AI** button that POSTs the simulation output to a dedicated NIM-served endpoint and returns a Zod-validated structured recommendation (`{ summary, risks, recommendations, scores }`):
+
+- `/api/insights/water-impact` — stormwater/drainage recommendation
+- `/api/insights/traffic-impact` — congestion + mode-split advice
+- `/api/insights/shadow-impact` — daylight occlusion mitigation
+- `/api/insights/wind-noise` — wind comfort + construction-noise recommendation
+- `/api/insights/project-brief` — combined NVIDIA-generated brief across all four
+
+This is the seam where the platform meets the NVIDIA stack: GPU-accelerated simulations on the client, reasoning on NVIDIA inference. See `lib/insights/promptTemplates.ts` for the system prompts.
 
 ---
 
@@ -174,11 +234,24 @@ This serves **visually impaired users**, **seniors**, **non-native English speak
 
 ## 9. Technical Stack
 
+### NVIDIA AI Stack (headline)
+
+| NVIDIA layer | Component | Role in TorontoView |
+|---|---|---|
+| Systems | **DGX Spark** | Fine-tuning the Toronto Council LoRA from Toronto's official corpus (`training/agent-council-lora/`). |
+| Software | **NGC Containers** (`nvcr.io/nvidia/pytorch:26.04-py3`) | Reproducible CUDA + PEFT + TRL training environment. |
+| Platforms | **NVIDIA NIM** (build.nvidia.com) | Default inference provider — Nemotron variants serve voice design, environmental reports, tree advisor, agent council, and the five AI Insights routes. |
+| Models | **Nemotron family** + **Toronto Council LoRA** | Selectable from `/settings`; user choice forwarded via `x-tv-provider` / `x-tv-model` headers. |
+
+See [`docs/NVIDIA_STACK.md`](./docs/NVIDIA_STACK.md) for the full feature → NVIDIA-layer mapping.
+
+### Application stack
+
 | Layer | Technology |
 |-------|------------|
 | Frontend | Next.js 16, React 19, TypeScript, Tailwind CSS, Framer Motion |
 | 3D Engine | Three.js, React Three Fiber, Drei |
-| AI Reasoning | Local Qwen/Gemma model through an OpenAI-compatible API (voice design, environmental report, tree advisor) |
+| LLM Reasoning | NVIDIA NIM (default) → NVIDIA DGX (LoRA) → local llama.cpp/vLLM → OpenAI (fallback chain). Provider abstraction in `lib/llm/`. |
 | Voice and Sound | ElevenLabs Text-to-Speech API, ElevenLabs Sound Generation API (editor effects + real-time street ambiance), Web Speech API |
 | Validation | Zod (schema validation with retry) |
 | Geospatial | Turf.js, OpenStreetMap data, lat/lng projection |
@@ -195,15 +268,28 @@ git clone https://github.com/Lemirq/nvidia-spark-hackathon.git && cd nvidia-spar
 npm install
 ```
 
-Add model and API settings to `.env.local`:
+Add model and API settings to `.env.local`. A template is in [`.env.local.example`](./.env.local.example):
 
 ```env
-LOCAL_LLM_BASE_URL=http://127.0.0.1:8000/v1
+# Headline NVIDIA NIM (build.nvidia.com)
+LLM_PROVIDER=nvidia-nim
+NVIDIA_API_KEY=nvapi-your-key-here
+NVIDIA_NIM_BASE_URL=https://integrate.api.nvidia.com/v1
+NVIDIA_NIM_DEFAULT_MODEL=meta/llama-3.3-nemotron-super-49b-v1
+
+# Optional: self-hosted DGX endpoint serving the agent-council LoRA
+DGX_INFERENCE_BASE_URL=
+DGX_INFERENCE_MODEL=toronto-council-lora
+
+# Optional offline-dev fallback
+LOCAL_LLM_BASE_URL=
 LOCAL_LLM_MODEL=unsloth/Qwen3.6-35B-A3B-GGUF
-# LOCAL_LLM_API_KEY=optional_if_your_local_gateway_requires_auth
+
 NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN=your_mapbox_public_token
 ELEVENLABS_API_KEY=your_elevenlabs_api_key
 ```
+
+Visit `/settings` after starting the dev server to pick a provider/model and run a connection test.
 
 ```bash
 npm run dev                # Start at http://localhost:3000

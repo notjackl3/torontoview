@@ -18,6 +18,7 @@ import {
   dayOfYearToLabel,
 } from "@/lib/sun/shadowAnalysis";
 import type { BuildMode } from "@/lib/buildMode";
+import { InsightButton } from "./InsightButton";
 
 interface ShadowAnalysisPanelProps {
   /** Whether shadow analysis mode is enabled */
@@ -244,6 +245,30 @@ export default function ShadowAnalysisPanel({
               <div className="text-[10px] font-bold text-slate-500 uppercase">
                 Results — {results.dateLabel}
               </div>
+
+              <InsightButton
+                endpoint="/api/insights/shadow-impact"
+                label="Generate NVIDIA shadow recommendation"
+                buildPayload={() => ({
+                  projectDescription: "Toronto building proposal — shadow / daylight review",
+                  simulation: {
+                    dateLabel: results.dateLabel,
+                    totalAffected: results.totalAffected,
+                    severelyAffected: results.severelyAffected,
+                    residentialUnitsAffected: results.residentialUnitsAffected,
+                    topImpacts: results.impacts.slice(0, 10).map((impact) => ({
+                      buildingId: impact.buildingId,
+                      buildingType: impact.buildingType,
+                      hoursLost: impact.hoursLost,
+                      baselineSunHours: impact.baselineSunHours,
+                      isResidential: impact.isResidential,
+                    })),
+                  },
+                  context: {
+                    dayOfYear,
+                  },
+                })}
+              />
 
               {/* Summary stats */}
               <div className="grid grid-cols-2 gap-2">

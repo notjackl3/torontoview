@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { generateLocalCompletionWithRetry } from "@/lib/localLlm";
+import { generateCompletionText } from "@/lib/llm/client";
+import { safeStringify } from "@/lib/llm/json";
+import { resolveLlmPreferences } from "@/lib/llm/preferences";
 import { isTavilyConfigured, tavilySearch, type TavilySnippet } from "@/lib/tavilySearch";
 
 interface AskRequestBody {
@@ -65,16 +67,6 @@ function buildSearchQuery(question: string, context: unknown): string {
   return parts.filter(Boolean).join(" ").slice(0, 280);
 }
 
-function safeStringify(value: unknown, maxChars: number): string {
-  try {
-    const s = JSON.stringify(value, null, 2);
-    if (s.length <= maxChars) return s;
-    return s.slice(0, maxChars) + "\n…(truncated)";
-  } catch {
-    return String(value).slice(0, maxChars);
-  }
-}
-
 export async function POST(request: NextRequest): Promise<NextResponse<AskResponseBody | { error: string }>> {
   let body: AskRequestBody;
   try {
@@ -124,9 +116,13 @@ export async function POST(request: NextRequest): Promise<NextResponse<AskRespon
     `## User question\n${question}`,
   ].join("\n");
 
+  const prefs = resolveLlmPreferences(request);
+
   let raw: string;
   try {
-    raw = await generateLocalCompletionWithRetry({
+    raw = await generateCompletionText({
+      provider: prefs.provider,
+      model: prefs.model,
       messages: [
         { role: "system", content: SYSTEM_PROMPT },
         ...historyTrail,

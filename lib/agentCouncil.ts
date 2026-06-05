@@ -1,4 +1,18 @@
 import { formatEvidenceForPrompt, retrieveCouncilEvidence, type RetrievedCouncilChunk } from "@/lib/agentCouncilRetrieval";
+import { generateCompletion } from "@/lib/llm/client";
+import { extractJsonObject } from "@/lib/llm/json";
+import {
+  defaultProviderId,
+  getProvider,
+  isProviderConfigured,
+  resolveDefaultModel,
+  type LlmProviderId,
+} from "@/lib/llm/providers";
+
+export interface CouncilLlmPreferences {
+  provider: LlmProviderId;
+  model: string;
+}
 
 export type CouncilVote = "approve" | "approve_with_conditions" | "needs_revision" | "blocker";
 
@@ -96,7 +110,7 @@ export interface CouncilDecision {
 }
 
 export interface CouncilAudit {
-  runtime: "nvidia-nim" | "deterministic-fallback";
+  runtime: LlmProviderId | "deterministic-fallback" | "mixed";
   model: string;
   endpoint?: string;
   nvidiaStack: string[];
@@ -263,10 +277,6 @@ function getAgentSources(agent: CouncilAgentDefinition): SourceCitation[] {
   return agent.sourceIds.map((id) => OFFICIAL_SOURCES[id]).filter(Boolean);
 }
 
-function cleanJsonText(text: string): string {
-  return text.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
-}
-
 function clampConfidence(value: unknown, fallback = 0.68): number {
   const numberValue = typeof value === "number" ? value : Number(value);
   if (!Number.isFinite(numberValue)) return fallback;
@@ -370,53 +380,40 @@ Rules:
 - Prefer conservative review when information is missing.`;
 }
 
-async function callNimJson(messages: NimChatMessage[], adapterId: string): Promise<unknown> {
-  const baseUrl = process.env.NVIDIA_NIM_BASE_URL;
-  const model = process.env.NVIDIA_NIM_MODEL || "local-nim-model";
-
-  if (!baseUrl) {
-    throw new Error("NVIDIA_NIM_BASE_URL is not configured");
+async function callNimJson(
+  messages: NimChatMessage[],
+  adapterId: string,
+  providerId: LlmProviderId,
+  fallbackModel: string,
+): Promise<unknown> {
+  // DGX routing follows the plan in docs/NVIDIA_STACK.md:
+  //   - If DGX_INFERENCE_MODEL is explicitly set, we treat the DGX as serving
+  //     a single shared LoRA under that name (Phase 1 Option B). Every agent
+  //     sends the same model string.
+  //   - Otherwise we send the agent's adapterId, which matches the multi-LoRA
+  //     PEFT layout (Phase 1 Option A) — NIM routes per-adapter from there.
+  // For hosted providers we always send the catalog/header-selected model.
+  let model: string;
+  if (providerId === "nvidia-dgx") {
+    const sharedOverride = process.env.DGX_INFERENCE_MODEL;
+    model = sharedOverride && sharedOverride.trim().length > 0 ? sharedOverride : adapterId;
+  } else {
+    model = fallbackModel;
   }
 
-  const endpoint = `${baseUrl.replace(/\/$/, "")}/chat/completions`;
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 45000);
+  const { text } = await generateCompletion({
+    provider: providerId,
+    model,
+    messages,
+    temperature: 0.2,
+    maxTokens: 900,
+  });
 
-  try {
-    const response = await fetch(endpoint, {
-      method: "POST",
-      signal: controller.signal,
-      headers: {
-        "Content-Type": "application/json",
-        ...(process.env.NVIDIA_NIM_API_KEY
-          ? { Authorization: `Bearer ${process.env.NVIDIA_NIM_API_KEY}` }
-          : {}),
-        "X-TorontoView-Adapter": adapterId,
-      },
-      body: JSON.stringify({
-        model,
-        messages,
-        temperature: 0.2,
-        max_tokens: 900,
-      }),
-    });
-
-    if (!response.ok) {
-      throw new Error(`NIM request failed with ${response.status}`);
-    }
-
-    const payload = await response.json() as {
-      choices?: Array<{ message?: { content?: string }; text?: string }>;
-    };
-    const text = payload.choices?.[0]?.message?.content ?? payload.choices?.[0]?.text;
-    if (!text) {
-      throw new Error("NIM response did not include text content");
-    }
-
-    return JSON.parse(cleanJsonText(text));
-  } finally {
-    clearTimeout(timeout);
+  const parsed = extractJsonObject(text);
+  if (parsed === null) {
+    throw new Error(`Agent ${adapterId} returned unparseable JSON: ${text.slice(0, 200)}`);
   }
+  return parsed;
 }
 
 function fallbackAgentReview(agent: CouncilAgentDefinition, request: CouncilReviewRequest, evidence: RetrievedCouncilChunk[] = []): AgentReview {
@@ -548,24 +545,69 @@ function fallbackAgentReview(agent: CouncilAgentDefinition, request: CouncilRevi
   };
 }
 
-async function reviewWithAgent(agent: CouncilAgentDefinition, request: CouncilReviewRequest): Promise<AgentReview> {
-  const evidence = await retrieveCouncilEvidence(agent.id, request);
-  const fallback = fallbackAgentReview(agent, request, evidence);
-  if (!process.env.NVIDIA_NIM_BASE_URL) return fallback;
+interface AgentReviewResult {
+  review: AgentReview;
+  runtime: LlmProviderId | "deterministic-fallback";
+  model: string;
+}
 
-  try {
-    const raw = await callNimJson(
-      [
-        { role: "system", content: agent.systemPrompt },
-        { role: "user", content: buildUserPrompt(agent, request, evidence) },
-      ],
-      agent.adapterId
-    );
-    return normalizeAgentReview(agent, raw, fallback, evidence);
-  } catch (error) {
-    console.error(`${agent.id} NIM review failed:`, error);
-    return fallback;
+function buildProviderChain(prefs: CouncilLlmPreferences): Array<{ provider: LlmProviderId; model: string }> {
+  // Walk through providers in preference order, skipping any not configured.
+  // This is what makes the Mac demo robust: if DGX_INFERENCE_BASE_URL is unset
+  // or unreachable, we transparently fall through to the hosted NIM (or any
+  // other provider with an API key set) before giving up to the deterministic
+  // fallback. The audit reports the runtime that actually answered.
+  const ordered: LlmProviderId[] = [];
+  ordered.push(prefs.provider);
+  for (const candidate of ["nvidia-dgx", "nvidia-nim", "openai", "local"] as LlmProviderId[]) {
+    if (!ordered.includes(candidate)) ordered.push(candidate);
   }
+  return ordered
+    .filter((providerId) => isProviderConfigured(getProvider(providerId)))
+    .map((providerId) => ({
+      provider: providerId,
+      model: providerId === prefs.provider ? prefs.model : resolveDefaultModel(getProvider(providerId)),
+    }));
+}
+
+async function reviewWithAgent(
+  agent: CouncilAgentDefinition,
+  request: CouncilReviewRequest,
+  prefs: CouncilLlmPreferences,
+): Promise<AgentReviewResult> {
+  const evidence = await retrieveCouncilEvidence(agent.id, request);
+  const deterministic = fallbackAgentReview(agent, request, evidence);
+  const chain = buildProviderChain(prefs);
+
+  if (chain.length === 0) {
+    return { review: deterministic, runtime: "deterministic-fallback", model: prefs.model };
+  }
+
+  let lastError: unknown;
+  for (const attempt of chain) {
+    try {
+      const raw = await callNimJson(
+        [
+          { role: "system", content: agent.systemPrompt },
+          { role: "user", content: buildUserPrompt(agent, request, evidence) },
+        ],
+        agent.adapterId,
+        attempt.provider,
+        attempt.model,
+      );
+      return {
+        review: normalizeAgentReview(agent, raw, deterministic, evidence),
+        runtime: attempt.provider,
+        model: attempt.provider === "nvidia-dgx" && !process.env.DGX_INFERENCE_MODEL ? agent.adapterId : attempt.model,
+      };
+    } catch (error) {
+      lastError = error;
+      console.error(`${agent.id} review via ${attempt.provider} failed; trying next provider in chain:`, error);
+    }
+  }
+
+  if (lastError) console.error(`${agent.id} fell through to deterministic fallback after chain exhausted.`);
+  return { review: deterministic, runtime: "deterministic-fallback", model: prefs.model };
 }
 
 function voteRank(vote: CouncilVote): number {
@@ -613,9 +655,61 @@ function decideCouncil(agents: AgentReview[]): CouncilDecision {
   };
 }
 
-export async function reviewCouncil(request: CouncilReviewRequest): Promise<CouncilReviewResponse> {
-  const agents = await Promise.all(AGENTS.map((agent) => reviewWithAgent(agent, request)));
-  const runtime = process.env.NVIDIA_NIM_BASE_URL ? "nvidia-nim" : "deterministic-fallback";
+function resolveCouncilPreferences(prefs?: Partial<CouncilLlmPreferences>): CouncilLlmPreferences {
+  // The council prefers the DGX-served LoRA when available (that's the
+  // toronto-council-lora trained in training/agent-council-lora). Otherwise
+  // it falls back to NIM, then to whatever the user has configured.
+  if (prefs?.provider) {
+    const providerId = prefs.provider;
+    const provider = getProvider(providerId);
+    return {
+      provider: providerId,
+      model: prefs.model ?? resolveDefaultModel(provider),
+    };
+  }
+
+  if (isProviderConfigured(getProvider("nvidia-dgx"))) {
+    return {
+      provider: "nvidia-dgx",
+      model: resolveDefaultModel(getProvider("nvidia-dgx")),
+    };
+  }
+  if (isProviderConfigured(getProvider("nvidia-nim"))) {
+    return {
+      provider: "nvidia-nim",
+      model: resolveDefaultModel(getProvider("nvidia-nim")),
+    };
+  }
+  const fallbackProviderId = defaultProviderId();
+  return {
+    provider: fallbackProviderId,
+    model: resolveDefaultModel(getProvider(fallbackProviderId)),
+  };
+}
+
+export async function reviewCouncil(
+  request: CouncilReviewRequest,
+  prefsOverride?: Partial<CouncilLlmPreferences>,
+): Promise<CouncilReviewResponse> {
+  const prefs = resolveCouncilPreferences(prefsOverride);
+  const results = await Promise.all(AGENTS.map((agent) => reviewWithAgent(agent, request, prefs)));
+  const agents = results.map((result) => result.review);
+
+  // Audit reports the runtime that actually answered. If all four agents went
+  // through the same provider we name it; if the chain split (e.g. DGX answered
+  // some agents and NIM answered others, or some fell through to deterministic)
+  // we mark it "mixed" so the demo doesn't claim a single source of truth.
+  const runtimes = new Set(results.map((result) => result.runtime));
+  const runtime: LlmProviderId | "deterministic-fallback" | "mixed" =
+    runtimes.size === 1 ? (results[0]?.runtime ?? "deterministic-fallback") : "mixed";
+
+  // Endpoint comes from whichever provider actually answered (best-effort —
+  // for "mixed" we just report the requested provider's endpoint).
+  const endpointProviderId = runtimes.size === 1 && results[0]?.runtime !== "deterministic-fallback"
+    ? (results[0]!.runtime as LlmProviderId)
+    : prefs.provider;
+  const endpointProvider = getProvider(endpointProviderId);
+  const auditModel = runtimes.size === 1 ? (results[0]?.model ?? prefs.model) : prefs.model;
   const chunksRetrieved = agents.reduce((total, agent) => total + agent.evidence.length, 0);
 
   return {
@@ -623,8 +717,8 @@ export async function reviewCouncil(request: CouncilReviewRequest): Promise<Coun
     councilDecision: decideCouncil(agents),
     audit: {
       runtime,
-      model: process.env.NVIDIA_NIM_MODEL || "local-nim-model",
-      endpoint: process.env.NVIDIA_NIM_BASE_URL,
+      model: auditModel,
+      endpoint: process.env[endpointProvider.baseUrlEnv] ?? endpointProvider.defaultBaseUrl ?? undefined,
       nvidiaStack: ["NVIDIA DGX Spark", "NVIDIA NIM", "NVIDIA NeMo LoRA", "official-source RAG"],
       adapterIds: AGENTS.map((agent) => agent.adapterId),
       retrievalPolicy: "official_sources_only",

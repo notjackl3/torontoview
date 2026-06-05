@@ -18,6 +18,7 @@ import {
   type BuildingSpec,
 } from "@/lib/water";
 import { type BuildMode, involvesNewConstruction } from "@/lib/buildMode";
+import { InsightButton } from "./InsightButton";
 
 interface PlacedBuilding {
   id: string;
@@ -290,6 +291,41 @@ export default function DrainagePanel({
                     </div>
                   ))}
               </div>
+            </Section>
+
+            {/* NVIDIA-served LLM insight */}
+            <Section title="NVIDIA AI Insight" icon={<CloudRain size={14} />}>
+              <InsightButton
+                endpoint="/api/insights/water-impact"
+                label="Generate water-impact recommendation"
+                buildPayload={() =>
+                  current
+                    ? {
+                        projectDescription: `Toronto building proposal (${groundUpBuildings.length} ground-up site${groundUpBuildings.length === 1 ? "" : "s"})`,
+                        simulation: {
+                          totalImperviousM2: current.surface.totalImperviousM2,
+                          netImperviousIncreaseM2: current.surface.netImperviousIncrease,
+                          imperviousPercentBefore: current.surface.imperviousPercentBefore,
+                          imperviousPercentAfter: current.surface.imperviousPercentAfter,
+                          runoff: current.runoff,
+                          mitigationsAvailable: current.mitigations.map((m) => ({
+                            name: m.name,
+                            volumeReductionL: m.volumeReductionL,
+                            applicability: m.applicability,
+                          })),
+                          offsetPercentIfAllApplied: current.offsetPercent,
+                        },
+                        context: {
+                          zoneType: groundUpBuildings[selectedIdx]?.timeline?.zoneType,
+                          coordinates: {
+                            lat: groundUpBuildings[selectedIdx]?.lat,
+                            lng: groundUpBuildings[selectedIdx]?.lng,
+                          },
+                        },
+                      }
+                    : null
+                }
+              />
             </Section>
 
             {/* Mitigation Recommendations */}

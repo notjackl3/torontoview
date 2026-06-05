@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { BuildingConfigSchema, type BuildingConfig } from '@/lib/buildingConfig';
-import { generateLocalCompletionWithRetry } from '@/lib/localLlm';
+import { generateCompletionText } from '@/lib/llm/client';
+import { extractJsonObject } from '@/lib/llm/json';
+import { resolveLlmPreferences } from '@/lib/llm/preferences';
+import type { ResolvedLlmPreferences } from '@/lib/llm/preferences';
 
 const SCHEMA_DESCRIPTION = `{
   "floors": number (integer, 1 to 200),
@@ -15,37 +18,13 @@ const SCHEMA_DESCRIPTION = `{
   "notes": string (optional, for anything that does not fit the schema)
 }`;
 
-function extractJsonObject(text: string): object | null {
-  // Try parsing directly first
-  try {
-    return JSON.parse(text);
-  } catch {
-    // Not valid JSON directly
-  }
-
-  // Strip markdown code fences
-  const stripped = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-  try {
-    return JSON.parse(stripped);
-  } catch {
-    // Still not valid
-  }
-
-  // Try to find the first JSON object in the text
-  const match = stripped.match(/\{[\s\S]*\}/);
-  if (match) {
-    try {
-      return JSON.parse(match[0]);
-    } catch {
-      // Could not parse extracted JSON
-    }
-  }
-
-  return null;
-}
-
-async function callLocalDesignModel(prompt: string): Promise<string> {
-  return generateLocalCompletionWithRetry({
+async function callDesignModel(
+  prompt: string,
+  prefs: ResolvedLlmPreferences,
+): Promise<string> {
+  return generateCompletionText({
+    provider: prefs.provider,
+    model: prefs.model,
     messages: [
       {
         role: 'system',
@@ -119,14 +98,16 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const prefs = resolveLlmPreferences(request);
+
     // First attempt
     const prompt = buildPrompt(text.trim(), previousConfig);
-    const rawResponse = await callLocalDesignModel(prompt);
+    const rawResponse = await callDesignModel(prompt, prefs);
     let parsed = extractJsonObject(rawResponse);
 
     if (!parsed) {
       return NextResponse.json(
-        { error: 'Local model returned an unparseable response. Please try again.' },
+        { error: 'Model returned an unparseable response. Please try again.' },
         { status: 500 }
       );
     }
@@ -153,13 +134,13 @@ export async function POST(request: NextRequest) {
 Your previous response had validation errors: ${errorDetails}
 Please fix these errors and return valid JSON matching the schema exactly.`;
 
-      const retryResponse = await callLocalDesignModel(retryPrompt);
+      const retryResponse = await callDesignModel(retryPrompt, prefs);
       const retryParsed = extractJsonObject(retryResponse);
 
       if (!retryParsed) {
         return NextResponse.json(
           {
-            error: `Local model response failed validation: ${errorDetails}`,
+            error: `Model response failed validation: ${errorDetails}`,
           },
           { status: 400 }
         );

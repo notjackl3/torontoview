@@ -9,6 +9,7 @@ import {
 import type { RoadNetwork } from "@/lib/roadNetwork";
 import type { BusinessPlan } from "@/lib/businessPlan";
 import { useAskScopeData } from "@/components/ask/HighlightAskProvider";
+import { InsightButton } from "./InsightButton";
 
 interface TrafficImpactPanelProps {
   impactResult: TrafficImpactResult | null;
@@ -344,6 +345,32 @@ export function TrafficImpactPanel({
         daily-traffic rules-of-thumb within 150m of the site. Capture rates use
         industry benchmarks for your business category.
       </p>
+
+      <InsightButton
+        endpoint="/api/insights/traffic-impact"
+        label="Generate NVIDIA traffic recommendation"
+        buildPayload={() => ({
+          projectDescription: "Toronto building proposal — traffic impact review",
+          simulation: {
+            totalDailyTrips,
+            totalPeakHourTrips,
+            congestedIntersections: congestedIntersections.length,
+            topImpactedEdges: sortedEdges.slice(0, 5).map((e) => ({
+              name: e.edgeName || e.edgeId.slice(0, 12),
+              los: e.los,
+              delta: e.delta,
+              level: Number(e.level.toFixed(2)),
+            })),
+            barricadedRoads: barricadeList.length,
+            construction: construction,
+          },
+          context: {
+            useRealTrafficData,
+            siteAnchor,
+          },
+        })}
+        className="mb-3"
+      />
 
       {/* Customer Forecast — runs whenever a site anchor + road network are
           available, even when no building has been placed for construction
